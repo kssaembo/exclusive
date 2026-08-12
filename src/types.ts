@@ -20,17 +20,18 @@ export interface GameState {
   gameId: string; phase: GamePhase; version: number; settings: GameSettings
   players: Player[]; undealtCards: Card[]; lockedPlayerIds: string[]
   trades: TradeRecord[]; claims: MonopolyClaim[]; winnerPlayerId?: string; winnerResourceType?: ResourceType
-  endReason?: EndReason; rankings?: PlayerRanking[]; startedAt?: number; endedAt?: number; updatedAt: number
+  endReason?: EndReason; rankings?: PlayerRanking[]; resultsRevealed: boolean; startedAt?: number; endedAt?: number; updatedAt: number
 }
 export interface PublicPlayer { id: string; name: string; cardCount: number; version: number; locked: boolean }
 export interface PublicGameState {
   gameId: string; phase: GamePhase; version: number; players: PublicPlayer[]
   settings: Pick<GameSettings, 'durationMinutes' | 'bombReverseMonopoly' | 'deckRules'>; tradeCount: number
-  winnerPlayerId?: string; winnerResourceType?: ResourceType; endReason?: EndReason
+  winnerPlayerId?: string; winnerResourceType?: ResourceType; endReason?: EndReason; resultsRevealed: boolean; rankings?: PlayerRanking[]
   startedAt?: number; endedAt?: number; updatedAt: number
 }
 export interface PlayerSnapshot { id: string; name: string; cards: Card[]; version: number; authToken: string }
-export interface BoardSnapshot { state: PublicGameState; connectedStations: number; stationCapacity: number; publishedAt: number }
+export interface PublicStationStatus { slot: number; connection: ConnectionLevel; busy: boolean }
+export interface BoardSnapshot { state: PublicGameState; stations: PublicStationStatus[]; stationCapacity: number; publishedAt: number }
 export interface TradeRequest {
   tradeId: string; stationId: string; playerAId: string; playerBId: string
   playerACardIds: string[]; playerBCardIds: string[]; playerAAuthToken: string; playerBAuthToken: string
@@ -51,6 +52,7 @@ export type WireMessage =
   | { type: 'PLAYER_SELECT_REQUEST'; requestId: string; playerId: string }
   | { type: 'PLAYER_SELECT_RESULT'; requestId: string; ok: true; player: PlayerSnapshot }
   | { type: 'PLAYER_SELECT_RESULT'; requestId: string; ok: false; message: string }
+  | { type: 'STATION_USAGE'; busy: boolean }
   | { type: 'TRADE_REQUEST'; request: TradeRequest }
   | { type: 'TRADE_RESULT'; result: TradeResult }
   | { type: 'CLAIM_REQUEST'; claimId: string; playerId: string; authToken: string; resourceType: ResourceType }
@@ -59,4 +61,4 @@ export type WireMessage =
   | { type: 'MESSAGE_TEST_ITEM'; testId: string; sequence: number; total: number; sentAt: number }
   | { type: 'MESSAGE_TEST_REPORT'; report: MessageTestReport }
   | { type: 'ERROR'; code: string; message: string }
-export interface StationStatus { stationId: string; name: string; slot: number; connection: ConnectionLevel; latencyMs: number | null; lastSeenAt: number; reconnects: number; testReport?: MessageTestReport }
+export interface StationStatus { stationId: string; name: string; slot: number; connection: ConnectionLevel; busy: boolean; latencyMs: number | null; lastSeenAt: number; reconnects: number; testReport?: MessageTestReport }

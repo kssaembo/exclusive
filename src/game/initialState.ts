@@ -13,5 +13,5 @@ export function createInitialState(setupOrCount: GameSetup | number = DEFAULT_SE
   const deckRules = getDeckRules(names.length)
   const deck = shuffle(createDeck(deckRules), random)
   const players = names.map((name, index) => ({ id: `player-${index + 1}`, name, cards: deck.slice(index * 8, (index + 1) * 8), version: 1 }))
-  return { gameId: crypto.randomUUID(), phase: 'setup', version: 1, settings: { playerCount: names.length, cardsPerPlayer: 8, durationMinutes: Math.max(1, Math.min(90, setup.durationMinutes)), bombPenalty: 15, bombReverseMonopoly: true, deckRules }, players, undealtCards: [], lockedPlayerIds: [], trades: [], claims: [], updatedAt: Date.now() }
+  return { gameId: crypto.randomUUID(), phase: 'setup', version: 1, settings: { playerCount: names.length, cardsPerPlayer: 8, durationMinutes: Math.max(1, Math.min(90, setup.durationMinutes)), bombPenalty: 15, bombReverseMonopoly: true, deckRules }, players, undealtCards: [], lockedPlayerIds: [], trades: [], claims: [], resultsRevealed: false, updatedAt: Date.now() }
 }

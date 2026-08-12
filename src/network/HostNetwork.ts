@@ -74,6 +74,11 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
     }
   }
 
+  setStationBusy(stationId: string, busy: boolean): void {
+    const entry = this.connections.get(stationId)
+    if (entry) { entry.status.busy = busy; this.emitStatuses() }
+  }
+
   stop(): void {
     this.connections.forEach((entry) => {
       if (entry.pingTimer) window.clearInterval(entry.pingTimer)
@@ -124,6 +129,7 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
           name: message.stationName || `거래소 ${slot}`,
           slot,
           connection: 'connected',
+          busy: previous?.status.busy ?? false,
           latencyMs: null,
           lastSeenAt: Date.now(),
           reconnects: previous ? previous.status.reconnects + 1 : 0,
@@ -157,6 +163,7 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
       const entry = this.connections.get(identifiedStationId)
       if (entry?.connection === connection) {
         entry.status.connection = 'disconnected'
+        entry.status.busy = false
         if (entry.pingTimer) window.clearInterval(entry.pingTimer)
         this.emitStatuses()
       }

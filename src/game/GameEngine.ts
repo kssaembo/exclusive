@@ -25,7 +25,9 @@ export class GameEngine {
         locked: this.state.lockedPlayerIds.includes(player.id),
       })), settings: { durationMinutes: this.state.settings.durationMinutes, bombReverseMonopoly: this.state.settings.bombReverseMonopoly, deckRules: clone(this.state.settings.deckRules) }, tradeCount: this.state.trades.filter((trade) => trade.status === 'success').length,
       winnerPlayerId: this.state.winnerPlayerId, winnerResourceType: this.state.winnerResourceType,
-      endReason: this.state.endReason, startedAt: this.state.startedAt, endedAt: this.state.endedAt, updatedAt: this.state.updatedAt,
+      endReason: this.state.endReason, resultsRevealed: this.state.resultsRevealed,
+      rankings: this.state.resultsRevealed ? clone(this.state.rankings) : undefined,
+      startedAt: this.state.startedAt, endedAt: this.state.endedAt, updatedAt: this.state.updatedAt,
     }
   }
   replaceState(state: GameState): void {
@@ -41,10 +43,18 @@ export class GameEngine {
   }
   endGame(reason: EndReason = 'manual'): void {
     if (this.state.phase === 'ended') return
-    this.state.phase = 'ended'; this.state.endReason = reason; this.state.endedAt = Date.now()
-    this.state.rankings = buildRankings(this.state.players, this.state.settings.bombPenalty, this.state.settings.deckRules)
-    if (!this.state.winnerPlayerId && reason === 'timeout') this.state.winnerPlayerId = this.state.rankings[0]?.playerId
+    this.state.phase = 'ended'; this.state.endReason = reason; this.state.endedAt = Date.now(); this.state.resultsRevealed = false
+    this.state.rankings = undefined
     this.touch(); this.emit()
+  }
+  revealResults(): void {
+    if (this.state.phase !== 'ended' || this.state.resultsRevealed) return
+    if (!this.state.rankings) this.state.rankings = buildRankings(this.state.players, this.state.settings.bombPenalty, this.state.settings.deckRules)
+    if (this.state.endReason === 'monopoly' && this.state.winnerPlayerId) {
+      const winner = this.state.rankings.find((rank) => rank.playerId === this.state.winnerPlayerId)
+      if (winner) this.state.rankings = [winner, ...this.state.rankings.filter((rank) => rank.playerId !== winner.playerId)].map((rank, index) => ({ ...rank, rank: index + 1 }))
+    } else if (!this.state.winnerPlayerId) this.state.winnerPlayerId = this.state.rankings[0]?.playerId
+    this.state.resultsRevealed = true; this.touch(); this.emit()
   }
   selectPlayer(playerId: string, stationId: string): PlayerSnapshot | null {
     if (this.state.phase !== 'active') return null
@@ -73,8 +83,8 @@ export class GameEngine {
     claim.reason = valid ? undefined : approve && !bombAllowed ? '이 게임에서는 폭탄 역독점을 사용하지 않습니다.' : approve ? `필요 ${required}장 / 보유 ${actual}장` : '교사가 선언을 반려했습니다.'
     if (valid && player) {
       this.state.winnerPlayerId = player.id; this.state.winnerResourceType = claim.resourceType
-      this.state.phase = 'ended'; this.state.endReason = 'monopoly'; this.state.endedAt = Date.now()
-      this.state.rankings = buildRankings(this.state.players, this.state.settings.bombPenalty, this.state.settings.deckRules)
+      this.state.phase = 'ended'; this.state.endReason = 'monopoly'; this.state.endedAt = Date.now(); this.state.resultsRevealed = false
+      this.state.rankings = undefined
     }
     this.touch(); this.emit(); return clone(claim)
   }
@@ -124,6 +134,7 @@ export class GameEngine {
       playerA.cards = [...playerA.cards.filter((card) => !request.playerACardIds.includes(card.id)), ...(bCards as CardArray)]
       playerB.cards = [...playerB.cards.filter((card) => !request.playerBCardIds.includes(card.id)), ...(aCards as CardArray)]
       playerA.version += 1; playerB.version += 1; this.touch(); this.recordTrade(request, 'success')
+      this.finishOnMonopoly([playerA, playerB])
       return { ok: true, tradeId: request.tradeId, publicState: this.getPublicState(), playerA: this.snapshot(playerA, request.playerAAuthToken), playerB: this.snapshot(playerB, request.playerBAuthToken) }
     } catch { return fail('INTERNAL_ERROR', '거래 처리 중 예기치 않은 오류가 발생했습니다.') }
     finally { this.state.lockedPlayerIds = this.state.lockedPlayerIds.filter((id) => id !== playerA.id && id !== playerB.id); this.emit() }
@@ -134,6 +145,18 @@ export class GameEngine {
   }
   private snapshot(player: Player, authToken: string): PlayerSnapshot { return { id: player.id, name: player.name, cards: clone(player.cards), version: player.version, authToken } }
   private findPlayer(id: string): Player | undefined { return this.state.players.find((player) => player.id === id) }
+  private finishOnMonopoly(candidates: Player[]): void {
+    for (const player of candidates) {
+      for (const rule of this.state.settings.deckRules) {
+        if (rule.type === 'bomb' && !this.state.settings.bombReverseMonopoly) continue
+        if (player.cards.filter((card) => card.type === rule.type).length !== rule.count) continue
+        this.state.phase = 'ended'; this.state.endReason = 'monopoly'; this.state.endedAt = Date.now()
+        this.state.winnerPlayerId = player.id; this.state.winnerResourceType = rule.type; this.state.resultsRevealed = false
+        this.state.rankings = undefined
+        return
+      }
+    }
+  }
   private recordTrade(request: TradeRequest, status: TradeRecord['status'], failureCode?: TradeFailureCode): void {
     if (this.state.trades.some((trade) => trade.tradeId === request.tradeId)) return
     this.state.trades.push({ tradeId: request.tradeId, stationId: request.stationId, playerAId: request.playerAId, playerBId: request.playerBId, playerACardIds: [...request.playerACardIds], playerBCardIds: [...request.playerBCardIds], status, failureCode, createdAt: Date.now(), completedAt: Date.now() })

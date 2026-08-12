@@ -8,6 +8,7 @@ export interface IHostGameTransport extends IGameTransport<WireMessage, StationS
   broadcast(message: WireMessage): void
   runMessageTest(stationId: string, testId: string, count: number): void
   recordReport(stationId: string, report: MessageTestReport): void
+  setStationBusy(stationId: string, busy: boolean): void
 }
 
 export interface IStationGameTransport extends IGameTransport<WireMessage, ConnectionLevel> {

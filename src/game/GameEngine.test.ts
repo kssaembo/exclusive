@@ -124,8 +124,36 @@ describe('GameEngine', () => {
     expect(engine.getState()).toMatchObject({ phase: 'ended', winnerResourceType: 'bomb', endReason: 'monopoly' })
   })
 
+  it('automatically stops after a trade creates a monopoly and reveals rankings only on command', async () => {
+    const state = createInitialState(8, () => 0.42)
+    const target = state.settings.deckRules.find((rule) => rule.type !== 'bomb' && rule.count === 8)!
+    const allCards = state.players.flatMap((player) => player.cards)
+    const targetCards = allCards.filter((card) => card.type === target.type)
+    const otherCards = allCards.filter((card) => card.type !== target.type)
+    state.players[0].cards = [...targetCards.slice(0, 7), otherCards[0]]
+    state.players[1].cards = [targetCards[7], ...otherCards.slice(1, 8)]
+    const remaining = otherCards.slice(8)
+    state.players.slice(2).forEach((player, index) => { player.cards = remaining.slice(index * 8, (index + 1) * 8) })
+    const engine = new GameEngine(state); engine.startGame()
+    const playerA = engine.getState().players[0]; const playerB = engine.getState().players[1]
+    const selectedA = engine.selectPlayer(playerA.id, 'station-auto')!; const selectedB = engine.selectPlayer(playerB.id, 'station-auto')!
+    const result = await engine.execute({
+      tradeId: 'automatic-monopoly', stationId: 'station-auto', playerAId: playerA.id, playerBId: playerB.id,
+      playerACardIds: [otherCards[0].id], playerBCardIds: [targetCards[7].id],
+      playerAAuthToken: selectedA.authToken, playerBAuthToken: selectedB.authToken,
+      expectedPlayerVersions: { [playerA.id]: playerA.version, [playerB.id]: playerB.version }, processingDelayMs: 1,
+    })
+    expect(result).toMatchObject({ ok: true, publicState: { phase: 'ended', endReason: 'monopoly', winnerPlayerId: playerA.id, resultsRevealed: false } })
+    expect(engine.getPublicState().rankings).toBeUndefined()
+    engine.revealResults()
+    expect(engine.getPublicState().resultsRevealed).toBe(true)
+    expect(engine.getPublicState().rankings).toHaveLength(8)
+  })
+
   it('calculates final rankings with the fixed 15-point bomb penalty', () => {
     const engine = activeEngine(12); engine.endGame('timeout')
+    expect(engine.getState().rankings).toBeUndefined()
+    engine.revealResults()
     const state = engine.getState()
     expect(state.rankings).toHaveLength(12)
     expect(state.settings.bombPenalty).toBe(15)
