@@ -86,6 +86,9 @@ export function StationPage() {
           setPlayerA(message.result.playerA); setPlayerB(message.result.playerB); setStage('done')
           setNotice({ kind: 'success', text: `거래가 완료되었습니다.${message.result.duplicateRequest ? ' 중복 요청은 안전하게 처리되었습니다.' : ''}` })
         } else { setStage('review'); setNotice({ kind: 'error', text: `${message.result.code} · ${message.result.message}` }) }
+      } else if (message.type === 'RECONNECT_REQUEST') {
+        setNotice({ kind: 'info', text: '교사 화면에서 재연결을 요청했습니다…' })
+        window.setTimeout(() => network.forceReconnect(), 150)
       } else if (message.type === 'MESSAGE_TEST_ITEM') receiveTestItem(message)
       else if (message.type === 'ERROR') setNotice({ kind: 'error', text: `${message.code} · ${message.message}` })
     }

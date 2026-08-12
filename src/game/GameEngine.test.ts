@@ -143,7 +143,9 @@ describe('GameEngine', () => {
       playerAAuthToken: selectedA.authToken, playerBAuthToken: selectedB.authToken,
       expectedPlayerVersions: { [playerA.id]: playerA.version, [playerB.id]: playerB.version }, processingDelayMs: 1,
     })
-    expect(result).toMatchObject({ ok: true, publicState: { phase: 'ended', endReason: 'monopoly', winnerPlayerId: playerA.id, resultsRevealed: false } })
+    expect(result).toMatchObject({ ok: true, publicState: { phase: 'ended', endReason: 'monopoly', resultsRevealed: false } })
+    if (result.ok) expect(result.publicState.winnerPlayerId).toBeUndefined()
+    expect(engine.getState().winnerPlayerId).toBe(playerA.id)
     expect(engine.getPublicState().rankings).toBeUndefined()
     engine.revealResults()
     expect(engine.getPublicState().resultsRevealed).toBe(true)

@@ -53,6 +53,7 @@ export type WireMessage =
   | { type: 'PLAYER_SELECT_RESULT'; requestId: string; ok: true; player: PlayerSnapshot }
   | { type: 'PLAYER_SELECT_RESULT'; requestId: string; ok: false; message: string }
   | { type: 'STATION_USAGE'; busy: boolean }
+  | { type: 'RECONNECT_REQUEST' }
   | { type: 'TRADE_REQUEST'; request: TradeRequest }
   | { type: 'TRADE_RESULT'; result: TradeResult }
   | { type: 'CLAIM_REQUEST'; claimId: string; playerId: string; authToken: string; resourceType: ResourceType }
