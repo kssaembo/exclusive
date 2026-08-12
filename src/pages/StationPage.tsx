@@ -3,7 +3,7 @@ import { StatusDot } from '../components/StatusDot'
 import { TeamGrid } from '../components/TeamGrid'
 import { GameEngine } from '../game/GameEngine'
 import { createInitialState } from '../game/initialState'
-import { MONOPOLY_TYPES } from '../game/rules'
+import { MONOPOLY_RULES } from '../game/rules'
 import { createStationTransport, type IStationGameTransport } from '../network/transportFactory'
 import { createId } from '../network/ids'
 import type { ConnectionLevel, MessageTestReport, PlayerSnapshot, PublicGameState, ResourceType, TradeRequest, WireMessage } from '../types'
@@ -28,7 +28,7 @@ export function StationPage() {
   const [lastRequest, setLastRequest] = useState<TradeRequest | null>(null)
   const [testReport, setTestReport] = useState<MessageTestReport | null>(null)
   const [claimPlayerId, setClaimPlayerId] = useState('')
-  const [claimType, setClaimType] = useState<Exclude<ResourceType, 'bomb'>>('coal')
+  const [claimType, setClaimType] = useState<ResourceType>('coal')
   const networkRef = useRef<IStationGameTransport | undefined>(undefined)
   const lastRequestRef = useRef<TradeRequest | null>(null)
   const stageRef = useRef<TradeStage>('auth-a')
@@ -137,7 +137,7 @@ export function StationPage() {
   const currentSide = stage === 'select-a' ? 'A' : 'B'
   return (
     <main className="app-shell station-page">
-      <header className="topbar"><div><p className="eyebrow">거래소 {slot ?? '—'} · 방 {activeRoom}</p><h1>비공개 카드 교환</h1></div><div className="header-status"><StatusDot status={connection} /><span>{state.phase} · v{state.version}</span></div></header>
+      <header className="topbar"><div><p className="eyebrow">TRADE STATION {slot ?? '—'} · ROOM {activeRoom}</p><h1>비공개 카드 교환</h1></div><div className="header-status"><StatusDot status={connection} /><span>{state.phase === 'active' ? '거래 가능' : state.phase === 'ended' ? '시장 폐장' : '개장 대기'}</span></div></header>
       <div className={`notice sticky ${notice.kind}`}>{notice.text}</div>
 
       <section className="panel trade-flow"><div className="step-track"><span className={stage.startsWith('auth') || stage.startsWith('select') ? 'active' : ''}>1 인증/선택</span><span className={stage === 'review' ? 'active' : ''}>2 확인</span><span className={stage === 'processing' || stage === 'done' ? 'active' : ''}>3 호스트 검증</span></div>
@@ -149,7 +149,7 @@ export function StationPage() {
         {stage === 'done' && <div className="done-panel"><span className="label">거래 완료</span><h2>양쪽 카드가 최신 상태로 갱신되었습니다</h2><div className="post-cards"><div><b>{playerA?.name}</b><span>{playerA?.cards.length}장 · v{playerA?.version}</span></div><div><b>{playerB?.name}</b><span>{playerB?.cards.length}장 · v{playerB?.version}</span></div></div><button className="primary large" onClick={resetTrade}>다음 거래 시작</button></div>}
       </section>
 
-      {stage === 'done' && <section className="panel claim-panel"><div className="section-heading"><div><span className="label">교사 검증 요청</span><h2>독점 선언</h2></div></div><div className="claim-controls"><select value={claimPlayerId} onChange={(e) => setClaimPlayerId(e.target.value)}><option value="">선언 참가자</option>{[playerA, playerB].filter(Boolean).map((player) => <option value={player!.id} key={player!.id}>{player!.name}</option>)}</select><select value={claimType} onChange={(e) => setClaimType(e.target.value as Exclude<ResourceType, 'bomb'>)}>{MONOPOLY_TYPES.map((rule) => <option key={rule.type} value={rule.type}>{rule.label} {rule.count}장</option>)}</select><button disabled={!claimPlayerId} onClick={requestClaim}>교사에게 선언</button></div></section>}
+      {stage === 'done' && <section className="panel claim-panel"><div className="section-heading"><div><span className="label">교사 검증 요청</span><h2>독점 선언</h2></div></div><div className="claim-controls"><select value={claimPlayerId} onChange={(e) => setClaimPlayerId(e.target.value)}><option value="">선언 참가자</option>{[playerA, playerB].filter(Boolean).map((player) => <option value={player!.id} key={player!.id}>{player!.name}</option>)}</select><select value={claimType} onChange={(e) => setClaimType(e.target.value as ResourceType)}>{MONOPOLY_RULES.filter((rule) => rule.type !== 'bomb' || state.phase === 'active').map((rule) => <option key={rule.type} value={rule.type}>{rule.label} {rule.count}장{rule.type === 'bomb' ? ' · 역독점' : ''}</option>)}</select><button disabled={!claimPlayerId} onClick={requestClaim}>교사에게 선언</button></div></section>}
 
       <details className="panel network-tests"><summary>네트워크 진단 도구</summary><div className="test-buttons"><button onClick={() => requestMessageTest(1)}>1회</button><button onClick={() => requestMessageTest(10)}>10회</button><button onClick={() => requestMessageTest(100)}>100회</button><button onClick={() => networkRef.current?.forceReconnect()}>수동 재연결</button><button disabled={!lastRequest} onClick={resendDuplicate}>동일 TradeID 재전송</button></div>{testReport && <p className="report-line">수신 <b>{testReport.received}/{testReport.requested}</b> · 누락 <b>{testReport.missing}</b> · 중복 <b>{testReport.duplicates}</b> · {testReport.durationMs}ms</p>}</details>
       <section className="panel"><div className="section-heading"><div><span className="label">공개 상태만 표시</span><h2>전체 참가자 현황</h2></div></div><TeamGrid state={state} /></section>

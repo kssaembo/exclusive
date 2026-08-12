@@ -1,7 +1,7 @@
 import type { GameState, PublicGameState } from '../types'
 
 export function TeamGrid({ state, revealCards = false }: { state: GameState | PublicGameState; revealCards?: boolean }) {
-  if ('settings' in state) {
+  if ('lockedPlayerIds' in state) {
     return <div className="team-grid">{state.players.map((player) => {
       const locked = state.lockedPlayerIds.includes(player.id)
       return <article className={`team-card ${locked ? 'locked' : ''}`} key={player.id}>

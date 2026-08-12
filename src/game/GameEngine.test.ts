@@ -20,6 +20,14 @@ function request(engine: GameEngine, a: number, b: number, tradeId: string): Tra
 }
 
 describe('GameEngine', () => {
+  it('deals all 64 cards to exactly eight players', () => {
+    const state = createInitialState(8, () => 0.42)
+    expect(state.players).toHaveLength(8)
+    expect(state.players.every((player) => player.cards.length === 8)).toBe(true)
+    expect(state.players.flatMap((player) => player.cards)).toHaveLength(64)
+    expect(state.undealtCards).toHaveLength(0)
+  })
+
   it('keeps private cards out of public state', () => {
     const publicState = activeEngine().getPublicState()
     expect(publicState.players[0]).not.toHaveProperty('cards')
@@ -92,5 +100,26 @@ describe('GameEngine', () => {
     expect(claim.status).toBe('pending')
     expect(engine.resolveClaim(claim.claimId, true)?.status).toBe('approved')
     expect(engine.getState().phase).toBe('ended')
+  })
+
+  it('supports the classroom bomb reverse-monopoly rule', () => {
+    const state = createInitialState(8, () => 0.42)
+    const bombs = state.players.flatMap((player) => player.cards.filter((card) => card.type === 'bomb'))
+    state.players.forEach((player) => { player.cards = player.cards.filter((card) => card.type !== 'bomb') })
+    state.players[0].cards.push(...bombs)
+    const engine = new GameEngine(state); engine.startGame()
+    const auth = engine.authenticate(engine.getState().players[0].accessCode, 'station-1')!
+    const claim = engine.createClaim('bomb-claim', 'station-1', auth.id, auth.authToken, 'bomb')!
+    expect(engine.resolveClaim(claim.claimId, true)?.status).toBe('approved')
+    expect(engine.getState()).toMatchObject({ phase: 'ended', winnerResourceType: 'bomb', endReason: 'monopoly' })
+  })
+
+  it('calculates final rankings and bomb penalties on timeout', () => {
+    const engine = activeEngine(); engine.endGame('timeout')
+    const state = engine.getState()
+    expect(state.rankings).toHaveLength(8)
+    expect(state.rankings?.[0].rank).toBe(1)
+    expect(state.winnerPlayerId).toBe(state.rankings?.[0].playerId)
+    expect(state.endReason).toBe('timeout')
   })
 })

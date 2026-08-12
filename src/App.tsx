@@ -1,11 +1,11 @@
-import { Link, Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { HomePage } from './pages/HomePage'
+import { RulesPage } from './pages/RulesPage'
+import { SetupPage } from './pages/SetupPage'
 import { HostPage } from './pages/HostPage'
 import { StationPage } from './pages/StationPage'
-
-function Home() {
-  return <main className="station-entry"><div className="entry-card"><p className="eyebrow">권장 검증판</p><h1>독점게임 WebRTC</h1><p>사용할 화면을 선택하세요.</p><div className="home-actions"><Link to="/host">교사 호스트 열기</Link><Link to="/station" className="secondary-link">거래소 태블릿 열기</Link></div></div></main>
-}
+import { BoardPage } from './pages/BoardPage'
 
 export default function App() {
-  return <Routes><Route path="/" element={<Home />} /><Route path="/host" element={<HostPage />} /><Route path="/station" element={<StationPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes>
+  return <Routes><Route path="/" element={<HomePage />} /><Route path="/rules" element={<RulesPage />} /><Route path="/setup" element={<SetupPage />} /><Route path="/host" element={<HostPage />} /><Route path="/board" element={<BoardPage />} /><Route path="/station" element={<StationPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes>
 }

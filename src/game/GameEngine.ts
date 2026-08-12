@@ -1,8 +1,8 @@
 import type {
   GameState, MonopolyClaim, Player, PlayerSnapshot, PublicGameState, ResourceType,
-  TradeFailureCode, TradeRecord, TradeRequest, TradeResult,
+  EndReason, TradeFailureCode, TradeRecord, TradeRequest, TradeResult,
 } from '../types'
-import { MONOPOLY_TYPES } from './rules'
+import { buildRankings, MONOPOLY_RULES } from './rules'
 
 const clone = <T,>(value: T): T => structuredClone(value)
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -23,7 +23,9 @@ export class GameEngine {
       players: this.state.players.map((player) => ({
         id: player.id, name: player.name, cardCount: player.cards.length, version: player.version,
         locked: this.state.lockedPlayerIds.includes(player.id),
-      })), winnerPlayerId: this.state.winnerPlayerId, updatedAt: this.state.updatedAt,
+      })), settings: { durationMinutes: this.state.settings.durationMinutes }, tradeCount: this.state.trades.filter((trade) => trade.status === 'success').length,
+      winnerPlayerId: this.state.winnerPlayerId, winnerResourceType: this.state.winnerResourceType,
+      endReason: this.state.endReason, startedAt: this.state.startedAt, endedAt: this.state.endedAt, updatedAt: this.state.updatedAt,
     }
   }
   replaceState(state: GameState): void {
@@ -37,9 +39,12 @@ export class GameEngine {
     if (this.state.phase !== 'setup') return
     this.state.phase = 'active'; this.state.startedAt = Date.now(); this.touch(); this.emit()
   }
-  endGame(): void {
+  endGame(reason: EndReason = 'manual'): void {
     if (this.state.phase === 'ended') return
-    this.state.phase = 'ended'; this.state.endedAt = Date.now(); this.touch(); this.emit()
+    this.state.phase = 'ended'; this.state.endReason = reason; this.state.endedAt = Date.now()
+    this.state.rankings = buildRankings(this.state.players, this.state.settings.bombPenalty)
+    if (!this.state.winnerPlayerId && reason === 'timeout') this.state.winnerPlayerId = this.state.rankings[0]?.playerId
+    this.touch(); this.emit()
   }
   authenticate(accessCode: string, stationId: string): PlayerSnapshot | null {
     if (this.state.phase !== 'active') return null
@@ -49,7 +54,7 @@ export class GameEngine {
     this.authSessions.set(authToken, { playerId: player.id, stationId, gameId: this.state.gameId })
     return this.snapshot(player, authToken)
   }
-  createClaim(claimId: string, stationId: string, playerId: string, authToken: string, resourceType: Exclude<ResourceType, 'bomb'>): MonopolyClaim | null {
+  createClaim(claimId: string, stationId: string, playerId: string, authToken: string, resourceType: ResourceType): MonopolyClaim | null {
     if (!this.isAuthorized(authToken, playerId, stationId) || this.state.phase !== 'active') return null
     const existing = this.state.claims.find((claim) => claim.claimId === claimId)
     if (existing) return clone(existing)
@@ -60,12 +65,17 @@ export class GameEngine {
     const claim = this.state.claims.find((item) => item.claimId === claimId)
     if (!claim || claim.status !== 'pending') return claim ? clone(claim) : null
     const player = this.state.players.find((item) => item.id === claim.playerId)
-    const required = MONOPOLY_TYPES.find((rule) => rule.type === claim.resourceType)?.count ?? Number.MAX_SAFE_INTEGER
+    const required = MONOPOLY_RULES.find((rule) => rule.type === claim.resourceType)?.count ?? Number.MAX_SAFE_INTEGER
     const actual = player?.cards.filter((card) => card.type === claim.resourceType).length ?? 0
-    const valid = approve && actual === required
+    const bombAllowed = claim.resourceType !== 'bomb' || this.state.settings.bombReverseMonopoly
+    const valid = approve && bombAllowed && actual === required
     claim.status = valid ? 'approved' : 'rejected'; claim.resolvedAt = Date.now()
-    claim.reason = valid ? undefined : approve ? `필요 ${required}장 / 보유 ${actual}장` : '교사가 선언을 반려했습니다.'
-    if (valid && player) { this.state.winnerPlayerId = player.id; this.state.phase = 'ended'; this.state.endedAt = Date.now() }
+    claim.reason = valid ? undefined : approve && !bombAllowed ? '이 게임에서는 폭탄 역독점을 사용하지 않습니다.' : approve ? `필요 ${required}장 / 보유 ${actual}장` : '교사가 선언을 반려했습니다.'
+    if (valid && player) {
+      this.state.winnerPlayerId = player.id; this.state.winnerResourceType = claim.resourceType
+      this.state.phase = 'ended'; this.state.endReason = 'monopoly'; this.state.endedAt = Date.now()
+      this.state.rankings = buildRankings(this.state.players, this.state.settings.bombPenalty)
+    }
     this.touch(); this.emit(); return clone(claim)
   }
   execute(request: TradeRequest): Promise<TradeResult> {
