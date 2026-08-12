@@ -11,6 +11,8 @@ export interface IHostGameTransport extends IGameTransport<WireMessage, StationS
 }
 
 export interface IStationGameTransport extends IGameTransport<WireMessage, ConnectionLevel> {
+  isConnected(): boolean
+  recoverIfDisconnected(): boolean
   forceReconnect(): void
   simulateDrop(): void
 }

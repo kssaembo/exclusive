@@ -39,9 +39,18 @@ export function StationPage() {
   useEffect(() => { localStorage.setItem('exclusive-station-id', stationIdRef.current) }, [])
   useEffect(() => { stageRef.current = stage }, [stage])
   useEffect(() => {
-    const recover = () => { if (document.visibilityState === 'visible' || navigator.onLine) networkRef.current?.forceReconnect() }
-    document.addEventListener('visibilitychange', recover); window.addEventListener('online', recover)
-    return () => { document.removeEventListener('visibilitychange', recover); window.removeEventListener('online', recover) }
+    const recoverIfDisconnected = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine) return
+      networkRef.current?.recoverIfDisconnected()
+    }
+    document.addEventListener('visibilitychange', recoverIfDisconnected)
+    window.addEventListener('online', recoverIfDisconnected)
+    window.addEventListener('pageshow', recoverIfDisconnected)
+    return () => {
+      document.removeEventListener('visibilitychange', recoverIfDisconnected)
+      window.removeEventListener('online', recoverIfDisconnected)
+      window.removeEventListener('pageshow', recoverIfDisconnected)
+    }
   }, [])
   useEffect(() => () => networkRef.current?.disconnect(), [])
 
