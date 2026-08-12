@@ -1,8 +1,9 @@
 import Peer, { type DataConnection } from 'peerjs'
-import type { GameState, MessageTestReport, StationStatus, WireMessage } from '../types'
+import type { MessageTestReport, PublicGameState, StationStatus, WireMessage } from '../types'
+import type { IGameTransport } from './IGameTransport'
 import { createId, hostPeerId } from './ids'
 
-interface HostNetworkEvents {
+export interface HostNetworkEvents {
   onStatus: (statuses: StationStatus[]) => void
   onMessage: (stationId: string, message: WireMessage) => void
   onOpen: () => void
@@ -15,12 +16,14 @@ interface ConnectionEntry {
   pingTimer?: number
 }
 
-export class HostNetwork {
+export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]> {
   private peer?: Peer
   private readonly connections = new Map<string, ConnectionEntry>()
-  private currentState: GameState
+  private currentState: PublicGameState
+  private readonly messageListeners = new Set<(message: WireMessage, senderId?: string) => void>()
+  private readonly statusListeners = new Set<(statuses: StationStatus[]) => void>()
 
-  constructor(private readonly roomCode: string, initialState: GameState, private readonly events: HostNetworkEvents) {
+  constructor(private readonly roomCode: string, initialState: PublicGameState, private readonly events: HostNetworkEvents) {
     this.currentState = initialState
   }
 
@@ -37,7 +40,9 @@ export class HostNetwork {
     })
   }
 
-  updateState(state: GameState): void {
+  connect(): void { this.start() }
+
+  updateState(state: PublicGameState): void {
     this.currentState = state
   }
 
@@ -47,7 +52,8 @@ export class HostNetwork {
     })
   }
 
-  send(stationId: string, message: WireMessage): boolean {
+  send(message: WireMessage, stationId?: string): boolean {
+    if (!stationId) return false
     const entry = this.connections.get(stationId)
     if (!entry?.connection.open) return false
     entry.connection.send(message)
@@ -56,7 +62,7 @@ export class HostNetwork {
 
   runMessageTest(stationId: string, testId: string, count: number): void {
     for (let sequence = 0; sequence < count; sequence += 1) {
-      this.send(stationId, { type: 'MESSAGE_TEST_ITEM', testId, sequence, total: count, sentAt: Date.now() })
+      this.send({ type: 'MESSAGE_TEST_ITEM', testId, sequence, total: count, sentAt: Date.now() }, stationId)
     }
   }
 
@@ -74,6 +80,16 @@ export class HostNetwork {
       entry.connection.close()
     })
     this.peer?.destroy()
+  }
+
+  disconnect(): void { this.stop() }
+
+  onMessage(handler: (message: WireMessage, senderId?: string) => void): () => void {
+    this.messageListeners.add(handler); return () => this.messageListeners.delete(handler)
+  }
+
+  onStatus(handler: (statuses: StationStatus[]) => void): () => void {
+    this.statusListeners.add(handler); return () => this.statusListeners.delete(handler)
   }
 
   private accept(connection: DataConnection): void {
@@ -133,6 +149,7 @@ export class HostNetwork {
         this.emitStatuses()
       }
       this.events.onMessage(identifiedStationId, message)
+      this.messageListeners.forEach((listener) => listener(message, identifiedStationId))
     })
 
     const markDisconnected = () => {
@@ -149,6 +166,8 @@ export class HostNetwork {
   }
 
   private emitStatuses(): void {
-    this.events.onStatus([...this.connections.values()].map(({ status }) => ({ ...status })).sort((a, b) => a.slot - b.slot))
+    const statuses = [...this.connections.values()].map(({ status }) => ({ ...status })).sort((a, b) => a.slot - b.slot)
+    this.events.onStatus(statuses)
+    this.statusListeners.forEach((listener) => listener(statuses))
   }
 }

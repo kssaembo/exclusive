@@ -94,12 +94,45 @@ h2 { margin-bottom: 0; font-size: 1.15rem; }
 .card-pickers button.selected { background: var(--blue); border-color: #8ab0ff; box-shadow: 0 0 0 2px #5d8fff55; }
 .trade-actions { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 10px; margin-top: 18px; }
 .primary { background: var(--blue); border-color: var(--blue); }.large { min-height: 56px; }.warning-button { color: #171009; background: var(--yellow); border-color: var(--yellow); }
+.game-control, .claims { margin-bottom: 16px; }
+.control-row { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
+.control-row label { display: grid; gap: 6px; color: var(--muted); font-size: .8rem; font-weight: 800; }
+.control-row input { width: 92px; height: 44px; padding: 0 10px; color: white; background: #09121f; border: 1px solid #40536e; border-radius: 9px; }
+.credential { margin-bottom: 9px; padding: 7px 9px; color: #b8c8df; background: #18273b; border-radius: 7px; font-size: .73rem; }
+.credential b { float: right; color: var(--yellow); letter-spacing: .15em; font-size: .88rem; }
+.claim-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; background: #281f12; border: 1px solid #6d5426; border-radius: 10px; }
+.claim-row + .claim-row { margin-top: 8px; }.claim-row div { display: flex; gap: 7px; }
+.trade-flow { min-height: 430px; }
+.step-track { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 24px; }
+.step-track span { padding: 9px; color: #7f8da1; background: #0c1625; border: 1px solid #26364c; border-radius: 8px; text-align: center; font-size: .78rem; font-weight: 800; }
+.step-track span.active { color: #dce8ff; border-color: var(--blue); background: #1b3152; }
+.auth-panel { width: min(520px, 100%); margin: 42px auto; text-align: center; }
+.auth-panel input { display: block; width: min(300px, 100%); height: 72px; margin: 22px auto 12px; color: white; background: #09121f; border: 2px solid #435675; border-radius: 12px; text-align: center; font-size: 2rem; font-weight: 900; letter-spacing: .22em; }
+.auth-panel button { width: min(300px, 100%); }
+.privacy-warning { color: var(--yellow); margin: 8px 0 18px; font-size: .84rem; }
+.large-card-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+.large-card-grid button { min-height: 92px; display: grid; place-content: center; gap: 5px; background: #0c1625; }
+.large-card-grid button b { font-size: 1rem; }.large-card-grid button small { color: var(--muted); font-size: .66rem; }
+.large-card-grid button.selected { background: #254d8a; border-color: #8ab0ff; box-shadow: inset 0 0 0 2px #5d8fff66; }
+.full { width: 100%; }
+.privacy-screen, .review-panel, .done-panel { min-height: 310px; display: grid; place-content: center; justify-items: center; text-align: center; }
+.privacy-screen p, .review-panel p { color: var(--muted); }
+.privacy-icon { width: 72px; height: 72px; display: grid; place-content: center; margin-bottom: 18px; color: var(--blue); background: #152b4b; border: 1px solid #315b96; border-radius: 50%; font-size: 2rem; }
+.spinner { width: 54px; height: 54px; margin-bottom: 22px; border: 5px solid #243853; border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.post-cards { width: min(560px, 100%); display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0; }
+.post-cards div { display: grid; gap: 6px; padding: 18px; background: #0c1625; border: 1px solid var(--line); border-radius: 10px; }
+.post-cards span { color: var(--muted); font-size: .8rem; }
+.claim-controls { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; }
+.claim-controls select { min-height: 48px; padding: 0 12px; color: white; background: #0a1524; border: 1px solid #40536e; border-radius: 10px; }
+.network-tests summary { cursor: pointer; font-weight: 800; }.network-tests[open] summary { margin-bottom: 16px; }
 
 @media (max-width: 900px) {
   .app-shell { padding: 16px; }
   .host-overview, .content-grid { grid-template-columns: 1fr; }
   .team-grid { grid-template-columns: repeat(2, 1fr); }
   .trade-actions { grid-template-columns: 1fr; }
+  .large-card-grid { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 560px) {
   .topbar { align-items: flex-start; flex-direction: column; }
@@ -110,4 +143,7 @@ h2 { margin-bottom: 0; font-size: 1.15rem; }
   .team-card { padding: 10px; }.card-chips { gap: 4px; }.card-chips span { font-size: .7rem; }
   .team-selectors { grid-template-columns: 1fr; }.team-selectors > span { transform: rotate(90deg); text-align: center; }
   .results-grid > div:last-child { grid-column: span 2; }
+  .large-card-grid { grid-template-columns: repeat(2, 1fr); }
+  .claim-controls { grid-template-columns: 1fr; }
+  .claim-row { align-items: stretch; flex-direction: column; }.claim-row div button { flex: 1; }
 }
