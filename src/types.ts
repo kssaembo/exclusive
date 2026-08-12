@@ -1,12 +1,13 @@
 export type ConnectionLevel = 'connected' | 'connecting' | 'disconnected'
 export type GamePhase = 'setup' | 'active' | 'ended'
 export type EndReason = 'monopoly' | 'timeout' | 'manual'
-export type ResourceType = 'coal' | 'iron' | 'wood' | 'water' | 'oil' | 'gold' | 'rice' | 'diamond' | 'bomb'
+export type ResourceType = 'coal' | 'iron' | 'wood' | 'water' | 'oil' | 'gold' | 'rice' | 'diamond' | 'copper' | 'silver' | 'wheat' | 'corn' | 'gas' | 'ruby' | 'sapphire' | 'bomb'
 
 export interface Card { id: string; type: ResourceType; label: string }
-export interface Player { id: string; name: string; accessCode: string; cards: Card[]; version: number }
-export interface GameSettings { playerCount: 8; cardsPerPlayer: 8; durationMinutes: number; bombPenalty: number; bombReverseMonopoly: boolean }
-export interface GameSetup { playerNames: string[]; durationMinutes: number; bombPenalty: number; bombReverseMonopoly: boolean }
+export interface Player { id: string; name: string; cards: Card[]; version: number }
+export interface DeckRule { type: ResourceType; label: string; count: number }
+export interface GameSettings { playerCount: number; cardsPerPlayer: 8; durationMinutes: number; bombPenalty: 15; bombReverseMonopoly: true; deckRules: DeckRule[] }
+export interface GameSetup { playerNames: string[]; durationMinutes: number }
 export interface PlayerRanking { playerId: string; rank: number; targetType: ResourceType; targetLabel: string; targetCount: number; requiredCount: number; completionRate: number; bombCount: number; score: number }
 
 export interface TradeRecord {
@@ -24,7 +25,7 @@ export interface GameState {
 export interface PublicPlayer { id: string; name: string; cardCount: number; version: number; locked: boolean }
 export interface PublicGameState {
   gameId: string; phase: GamePhase; version: number; players: PublicPlayer[]
-  settings: Pick<GameSettings, 'durationMinutes'>; tradeCount: number
+  settings: Pick<GameSettings, 'durationMinutes' | 'bombReverseMonopoly' | 'deckRules'>; tradeCount: number
   winnerPlayerId?: string; winnerResourceType?: ResourceType; endReason?: EndReason
   startedAt?: number; endedAt?: number; updatedAt: number
 }
@@ -47,9 +48,9 @@ export type WireMessage =
   | { type: 'STATE_SYNC'; state: PublicGameState }
   | { type: 'PING'; id: string; sentAt: number }
   | { type: 'PONG'; id: string; sentAt: number }
-  | { type: 'AUTH_REQUEST'; requestId: string; accessCode: string }
-  | { type: 'AUTH_RESULT'; requestId: string; ok: true; player: PlayerSnapshot }
-  | { type: 'AUTH_RESULT'; requestId: string; ok: false; message: string }
+  | { type: 'PLAYER_SELECT_REQUEST'; requestId: string; playerId: string }
+  | { type: 'PLAYER_SELECT_RESULT'; requestId: string; ok: true; player: PlayerSnapshot }
+  | { type: 'PLAYER_SELECT_RESULT'; requestId: string; ok: false; message: string }
   | { type: 'TRADE_REQUEST'; request: TradeRequest }
   | { type: 'TRADE_RESULT'; result: TradeResult }
   | { type: 'CLAIM_REQUEST'; claimId: string; playerId: string; authToken: string; resourceType: ResourceType }

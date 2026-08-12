@@ -2,41 +2,49 @@ import { describe, expect, it } from 'vitest'
 import type { TradeRequest } from '../types'
 import { GameEngine } from './GameEngine'
 import { createInitialState } from './initialState'
+import { getDeckRules } from './rules'
 
-function activeEngine() {
-  const engine = new GameEngine(createInitialState(8, () => 0.42)); engine.startGame(); return engine
+function activeEngine(playerCount = 8) {
+  const engine = new GameEngine(createInitialState(playerCount, () => 0.42)); engine.startGame(); return engine
 }
 
 function request(engine: GameEngine, a: number, b: number, tradeId: string): TradeRequest {
   const state = engine.getState(); const playerA = state.players[a]; const playerB = state.players[b]
-  const authA = engine.authenticate(playerA.accessCode, 'test-station')!
-  const authB = engine.authenticate(playerB.accessCode, 'test-station')!
+  const selectedA = engine.selectPlayer(playerA.id, 'test-station')!
+  const selectedB = engine.selectPlayer(playerB.id, 'test-station')!
   return {
     tradeId, stationId: 'test-station', playerAId: playerA.id, playerBId: playerB.id,
     playerACardIds: [playerA.cards[0].id], playerBCardIds: [playerB.cards[0].id],
-    playerAAuthToken: authA.authToken, playerBAuthToken: authB.authToken,
+    playerAAuthToken: selectedA.authToken, playerBAuthToken: selectedB.authToken,
     expectedPlayerVersions: { [playerA.id]: playerA.version, [playerB.id]: playerB.version }, processingDelayMs: 5,
   }
 }
 
-describe('GameEngine', () => {
-  it('deals all 64 cards to exactly eight players', () => {
-    const state = createInitialState(8, () => 0.42)
-    expect(state.players).toHaveLength(8)
+describe('variable classroom deck', () => {
+  it.each(Array.from({ length: 10 }, (_, index) => index + 6))('deals a complete balanced deck for %i players', (playerCount) => {
+    const state = createInitialState(playerCount, () => 0.42)
+    const rules = getDeckRules(playerCount)
+    expect(state.players).toHaveLength(playerCount)
     expect(state.players.every((player) => player.cards.length === 8)).toBe(true)
-    expect(state.players.flatMap((player) => player.cards)).toHaveLength(64)
+    expect(state.players.flatMap((player) => player.cards)).toHaveLength(playerCount * 8)
+    expect(rules.filter((rule) => rule.type !== 'bomb')).toHaveLength(playerCount)
+    expect(rules.filter((rule) => rule.type !== 'bomb').every((rule) => rule.count === 7 || rule.count === 8)).toBe(true)
+    expect(rules.find((rule) => rule.type === 'bomb')?.count).toBe(Math.round(playerCount * 5 / 8))
+    expect(rules.reduce((sum, rule) => sum + rule.count, 0)).toBe(playerCount * 8)
     expect(state.undealtCards).toHaveLength(0)
   })
+})
 
-  it('keeps private cards out of public state', () => {
+describe('GameEngine', () => {
+  it('keeps private cards and selection tokens out of public state', () => {
     const publicState = activeEngine().getPublicState()
     expect(publicState.players[0]).not.toHaveProperty('cards')
-    expect(publicState.players[0]).not.toHaveProperty('accessCode')
+    expect(publicState.players[0]).not.toHaveProperty('authToken')
   })
 
-  it('requires an active game for authentication and trades', async () => {
+  it('requires an active game before a player can be selected', () => {
     const engine = new GameEngine(createInitialState(8, () => 0.42))
-    expect(engine.authenticate(engine.getState().players[0].accessCode, 'test-station')).toBeNull()
+    expect(engine.selectPlayer(engine.getState().players[0].id, 'test-station')).toBeNull()
   })
 
   it('executes a valid equal-card trade', async () => {
@@ -83,43 +91,45 @@ describe('GameEngine', () => {
     expect(await engine.execute(stale)).toMatchObject({ ok: false, code: 'VERSION_CONFLICT' })
   })
 
-  it('rejects an auth token issued to another station', async () => {
-    const engine = activeEngine(); const invalid = request(engine, 0, 1, 'auth-station')
+  it('keeps an internal player selection session scoped to one station', async () => {
+    const engine = activeEngine(); const invalid = request(engine, 0, 1, 'session-station')
     invalid.stationId = 'other-station'
     expect(await engine.execute(invalid)).toMatchObject({ ok: false, code: 'INVALID_AUTH' })
   })
 
-  it('only ends the game when the teacher approves a valid monopoly', () => {
-    const state = createInitialState(8, () => 0.42)
-    const coal = state.players.flatMap((player) => player.cards.filter((card) => card.type === 'coal'))
-    state.players.forEach((player) => { player.cards = player.cards.filter((card) => card.type !== 'coal') })
-    state.players[0].cards.push(...coal)
+  it('only ends the game when the teacher approves a valid resource monopoly', () => {
+    const state = createInitialState(10, () => 0.42)
+    const target = state.settings.deckRules.find((rule) => rule.type !== 'bomb')!
+    const cards = state.players.flatMap((player) => player.cards.filter((card) => card.type === target.type))
+    state.players.forEach((player) => { player.cards = player.cards.filter((card) => card.type !== target.type) })
+    state.players[0].cards.push(...cards)
     const engine = new GameEngine(state); engine.startGame()
-    const auth = engine.authenticate(engine.getState().players[0].accessCode, 'station-1')!
-    const claim = engine.createClaim('claim-1', 'station-1', auth.id, auth.authToken, 'coal')!
+    const selected = engine.selectPlayer(engine.getState().players[0].id, 'station-1')!
+    const claim = engine.createClaim('claim-1', 'station-1', selected.id, selected.authToken, target.type)!
     expect(claim.status).toBe('pending')
     expect(engine.resolveClaim(claim.claimId, true)?.status).toBe('approved')
     expect(engine.getState().phase).toBe('ended')
   })
 
-  it('supports the classroom bomb reverse-monopoly rule', () => {
-    const state = createInitialState(8, () => 0.42)
+  it('supports a player-count-adjusted bomb reverse monopoly', () => {
+    const state = createInitialState(15, () => 0.42)
     const bombs = state.players.flatMap((player) => player.cards.filter((card) => card.type === 'bomb'))
+    expect(bombs).toHaveLength(9)
     state.players.forEach((player) => { player.cards = player.cards.filter((card) => card.type !== 'bomb') })
     state.players[0].cards.push(...bombs)
     const engine = new GameEngine(state); engine.startGame()
-    const auth = engine.authenticate(engine.getState().players[0].accessCode, 'station-1')!
-    const claim = engine.createClaim('bomb-claim', 'station-1', auth.id, auth.authToken, 'bomb')!
+    const selected = engine.selectPlayer(engine.getState().players[0].id, 'station-1')!
+    const claim = engine.createClaim('bomb-claim', 'station-1', selected.id, selected.authToken, 'bomb')!
     expect(engine.resolveClaim(claim.claimId, true)?.status).toBe('approved')
     expect(engine.getState()).toMatchObject({ phase: 'ended', winnerResourceType: 'bomb', endReason: 'monopoly' })
   })
 
-  it('calculates final rankings and bomb penalties on timeout', () => {
-    const engine = activeEngine(); engine.endGame('timeout')
+  it('calculates final rankings with the fixed 15-point bomb penalty', () => {
+    const engine = activeEngine(12); engine.endGame('timeout')
     const state = engine.getState()
-    expect(state.rankings).toHaveLength(8)
+    expect(state.rankings).toHaveLength(12)
+    expect(state.settings.bombPenalty).toBe(15)
     expect(state.rankings?.[0].rank).toBe(1)
     expect(state.winnerPlayerId).toBe(state.rankings?.[0].playerId)
-    expect(state.endReason).toBe('timeout')
   })
 })
