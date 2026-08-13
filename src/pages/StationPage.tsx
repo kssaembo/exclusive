@@ -6,6 +6,7 @@ import { createStationTransport, type IStationGameTransport } from '../network/t
 import { createId } from '../network/ids'
 import type { ConnectionLevel, MessageTestReport, PlayerSnapshot, PublicGameState, TradeRequest, WireMessage } from '../types'
 import { images, resourceIcon } from '../assets'
+import { audioFiles, playEffect } from '../audio'
 
 type TradeStage = 'select-a-player' | 'select-a-cards' | 'privacy' | 'select-b-player' | 'select-b-cards' | 'review' | 'processing' | 'done'
 type Notice = { kind: 'success' | 'error' | 'info'; text: string }
@@ -70,7 +71,8 @@ export function StationPage() {
       else if (message.type === 'PLAYER_SELECT_RESULT') {
         const side = playerRequests.current.get(message.requestId)
         playerRequests.current.delete(message.requestId)
-        if (!message.ok) { setNotice({ kind: 'error', text: message.message }); return }
+        if (!message.ok) { playEffect(audioFiles.error, .5); setNotice({ kind: 'error', text: message.message }); return }
+        playEffect(audioFiles.playerConfirm, .55)
         if (side === 'A') {
           setPlayerA(message.player); setCardsA([]); setStage('select-a-cards')
           network.send({ type: 'STATION_USAGE', busy: true })
@@ -84,9 +86,10 @@ export function StationPage() {
       } else if (message.type === 'TRADE_RESULT') {
         setState(message.result.publicState)
         if (message.result.ok) {
+          playEffect(audioFiles.tradeSuccess, .65)
           setPlayerA(message.result.playerA); setPlayerB(message.result.playerB); setStage('done')
           setNotice({ kind: 'success', text: `거래가 완료되었습니다.${message.result.duplicateRequest ? ' 중복 요청은 안전하게 처리되었습니다.' : ''}` })
-        } else { setStage('review'); setNotice({ kind: 'error', text: `${message.result.code} · ${message.result.message}` }) }
+        } else { playEffect(audioFiles.error, .5); setStage('review'); setNotice({ kind: 'error', text: `${message.result.code} · ${message.result.message}` }) }
       } else if (message.type === 'RECONNECT_REQUEST') {
         setNotice({ kind: 'info', text: '교사 화면에서 재연결을 요청했습니다…' })
         window.setTimeout(() => network.forceReconnect(), 150)
@@ -136,19 +139,20 @@ export function StationPage() {
   const toggleCard = (side: 'A' | 'B', cardId: string) => {
     const setter = side === 'A' ? setCardsA : setCardsB
     setter((cards) => {
-      if (cards.includes(cardId)) return cards.filter((id) => id !== cardId)
-      if (side === 'B' && cards.length >= cardsA.length) { setNotice({ kind: 'error', text: `두 번째 플레이어는 정확히 ${cardsA.length}장만 선택할 수 있습니다.` }); return cards }
+      if (cards.includes(cardId)) { playEffect(audioFiles.cardSelect, .38); return cards.filter((id) => id !== cardId) }
+      if (side === 'B' && cards.length >= cardsA.length) { playEffect(audioFiles.error, .45); setNotice({ kind: 'error', text: `두 번째 플레이어는 정확히 ${cardsA.length}장만 선택할 수 있습니다.` }); return cards }
+      playEffect(audioFiles.cardSelect, .38)
       return [...cards, cardId]
     })
   }
 
   const completeCardSelection = () => {
     if (stage === 'select-a-cards') {
-      if (!cardsA.length) { setNotice({ kind: 'error', text: '교환할 카드를 1장 이상 선택하세요.' }); return }
+      if (!cardsA.length) { playEffect(audioFiles.error, .45); setNotice({ kind: 'error', text: '교환할 카드를 1장 이상 선택하세요.' }); return }
       setStage('privacy'); return
     }
     const missing = cardsA.length - cardsB.length
-    if (missing > 0) { setNotice({ kind: 'error', text: `${missing}장의 카드를 더 선택해야 합니다.` }); return }
+    if (missing > 0) { playEffect(audioFiles.error, .45); setNotice({ kind: 'error', text: `${missing}장의 카드를 더 선택해야 합니다.` }); return }
     setStage('review')
   }
 
@@ -191,9 +195,9 @@ export function StationPage() {
       {(selectingA || selectingB) && <div className="player-picker"><span className="label">{selectingA ? 'PLAYER A' : 'PLAYER B'}</span><h2>{selectingA ? '첫 번째' : '두 번째'} 플레이어 선택</h2><p>본인의 이름을 선택하세요.</p><div className="player-list">{state.players.filter((player) => !selectingB || player.id !== playerA?.id).map((player) => <button key={player.id} onClick={() => setPendingPlayer({ side: selectingA ? 'A' : 'B', id: player.id, name: player.name })}>{player.name}</button>)}</div></div>}
       {(stage === 'select-a-cards' || stage === 'select-b-cards') && currentPlayer && <div className="private-selection"><span className="label">{currentPlayer.name}</span><h2>내가 줄 카드를 선택하세요</h2><p className="privacy-warning">{stage === 'select-b-cards' ? `정확히 ${cardsA.length}장을 선택하세요 · 현재 ${cardsB.length}/${cardsA.length}장` : '이 화면은 본인만 확인하고 다른 학생에게 보여주지 마세요.'}</p><div className="large-card-grid">{currentPlayer.cards.map((card) => <button className={`resource-card ${card.type === 'bomb' ? 'bomb' : ''} ${currentCards.includes(card.id) ? 'selected' : ''}`} key={card.id} onClick={() => toggleCard(currentSide, card.id)}><img className="card-frame-art" src={card.type === 'bomb' ? images.cards.bomb : images.cards.resource} alt="" /><img className="card-resource-art" src={resourceIcon(card.type)} alt="" /><b>{card.label}</b><span className="selected-check" aria-hidden="true">✓</span></button>)}</div><button className="primary large full" onClick={completeCardSelection}>{stage === 'select-b-cards' ? `${currentCards.length}/${cardsA.length}장 선택 완료` : `${currentCards.length}장 선택 완료`}</button></div>}
       {stage === 'privacy' && <div className="privacy-screen"><img className="privacy-card-back" src={images.cards.back} alt="비공개 카드 뒷면" /><h2>{playerA?.name} 선택 완료</h2><p>화면을 가린 뒤 두 번째 플레이어에게 태블릿을 건네주세요.</p><button className="primary large" onClick={() => setStage('select-b-player')}>두 번째 플레이어 선택</button></div>}
-      {stage === 'review' && <div className="review-panel"><span className="label">최종 확인</span><h2>{playerA?.name} {cardsA.length}장 ↔ {playerB?.name} {cardsB.length}장</h2><p>각자 선택한 카드 내용은 숨기고 장수만 확인합니다.</p><div className="trade-actions review-actions"><button onClick={() => setStage('select-b-cards')}>이전</button><button className="primary large" onClick={submitTrade}>거래 요청</button></div></div>}
+      {stage === 'review' && <div className="review-panel"><span className="label">최종 확인</span><h2 className="trade-review-title"><span>{playerA?.name} <b>{cardsA.length}장</b></span><i>↔</i><span>{playerB?.name} <b>{cardsB.length}장</b></span></h2><p>교환하는 카드 장수가 정확한지 확인해 주세요.</p><div className="trade-actions review-actions"><button onClick={() => setStage('select-b-cards')}>이전</button><button className="primary large" onClick={submitTrade}>거래 요청</button></div></div>}
       {stage === 'processing' && <div className="privacy-screen"><div className="spinner" /><h2>공식 거래 처리 중</h2><p>태블릿을 닫거나 새로고침하지 마세요.</p></div>}
-      {stage === 'done' && <div className="done-panel"><span className="label">거래 완료</span><h2>거래가 완료되었습니다</h2><p>3초 후 다음 거래 화면으로 자동 전환됩니다.</p><div className="auto-reset-progress"><i /></div></div>}
+      {stage === 'done' && <div className="done-panel"><span className="label">TRADE COMPLETE</span><h2>거래가 완료되었습니다</h2><p>3초 후 다음 거래 화면으로 자동 전환됩니다.</p><div className="auto-reset-progress"><i /></div></div>}
       </>}
     </section>
 

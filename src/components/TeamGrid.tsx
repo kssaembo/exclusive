@@ -11,7 +11,7 @@ export function TeamGrid({ state, revealCards = false }: { state: GameState | Pu
       const monopoly = state.winnerPlayerId === player.id && state.endReason === 'monopoly'
       const nearMonopoly = !monopoly && remaining > 0 && remaining <= 2
       return <article className={`team-card ${locked ? 'locked' : ''} ${nearMonopoly ? 'near-monopoly' : ''} ${monopoly ? 'monopoly' : ''}`} key={player.id}>
-        <header><strong>{player.name}</strong><span>v{player.version} · {player.cards.length}장</span></header>
+        <header><strong>{player.name}</strong><span>거래횟수: {Math.max(0, player.version - 1)} · {player.cards.length}장</span></header>
         {revealCards && <div className="card-chips">{player.cards.map((card) => <span title={card.label} key={card.id}><img src={resourceIcon(card.type)} alt="" />{card.label}</span>)}</div>}
         {nearMonopoly && <div className="near-label">독점까지 {remaining}장</div>}
         {monopoly && <div className="monopoly-label">독점</div>}
@@ -20,7 +20,7 @@ export function TeamGrid({ state, revealCards = false }: { state: GameState | Pu
     })}</div>
   }
   return <div className="team-grid">{state.players.map((player) => <article className={`team-card ${player.locked ? 'locked' : ''}`} key={player.id}>
-    <header><strong>{player.name}</strong><span>v{player.version} · {player.cardCount}장</span></header>
+    <header><strong>{player.name}</strong><span>거래횟수: {Math.max(0, player.version - 1)} · {player.cardCount}장</span></header>
     <div className="muted">비공개 카드</div>
     {player.locked && <div className="lock-label">거래 중</div>}
   </article>)}</div>

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BoardSnapshot } from '../types'
 import { Celebration } from '../components/Celebration'
 import { images, resourceIcon } from '../assets'
+import { audioFiles, BackgroundAudio, playEffect } from '../audio'
 
 const channelName = (room: string) => `exclusive-board-${room}`
 const formatTime = (ms: number) => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`
@@ -10,6 +11,7 @@ export function BoardPage() {
   const room = new URLSearchParams(location.search).get('room') ?? ''
   const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(() => { const raw = localStorage.getItem(channelName(room)); return raw ? JSON.parse(raw) : null })
   const [now, setNow] = useState(Date.now())
+  const previousMode = useRef('')
   useEffect(() => {
     const channel = new BroadcastChannel(channelName(room)); channel.onmessage = (event) => setSnapshot(event.data as BoardSnapshot)
     const storage = (event: StorageEvent) => { if (event.key === channelName(room) && event.newValue) setSnapshot(JSON.parse(event.newValue)) }
@@ -21,16 +23,24 @@ export function BoardPage() {
     if (snapshot.state.phase === 'ended') return Math.max(0, (snapshot.state.startedAt + snapshot.state.settings.durationMinutes * 60000) - (snapshot.state.endedAt ?? now))
     return Math.max(0, snapshot.state.startedAt + snapshot.state.settings.durationMinutes * 60000 - now)
   }, [snapshot, now])
+  const monopolyAlarm = !!snapshot && snapshot.state.phase === 'ended' && snapshot.state.endReason === 'monopoly' && !snapshot.state.resultsRevealed
+  const revealed = !!snapshot && snapshot.state.phase === 'ended' && snapshot.state.resultsRevealed
+  const audioMode = monopolyAlarm ? 'monopoly' : revealed ? 'results' : snapshot?.state.phase === 'active' ? 'market' : 'waiting'
+  useEffect(() => {
+    if (previousMode.current === audioMode) return
+    previousMode.current = audioMode
+    if (audioMode === 'monopoly') playEffect(audioFiles.monopoly, .72)
+    if (audioMode === 'results') { playEffect(audioFiles.resultsReveal, .75); window.setTimeout(() => playEffect(audioFiles.firework, .55), 900) }
+  }, [audioMode])
   if (!snapshot) return <main className="board-page board-wait"><p className="eyebrow">PUBLIC DISPLAY · ROOM {room}</p><h1>교사 운영 화면을 기다리는 중</h1><p>이 창은 학생 공개용 전광판입니다.</p></main>
 
   const winner = snapshot.state.players.find((player) => player.id === snapshot.state.winnerPlayerId)
   const winnerResource = snapshot.state.settings.deckRules.find((rule) => rule.type === snapshot.state.winnerResourceType)
-  const monopolyAlarm = snapshot.state.phase === 'ended' && snapshot.state.endReason === 'monopoly' && !snapshot.state.resultsRevealed
-  const revealed = snapshot.state.phase === 'ended' && snapshot.state.resultsRevealed
   const stations = snapshot.stations ?? []
   const connectedCount = stations.filter((station) => station.connection === 'connected').length
 
   return <main className={`board-page ${snapshot.state.phase} ${monopolyAlarm ? 'monopoly-alarm' : ''} ${revealed ? 'results-revealed celebration' : ''}`}>
+    <BackgroundAudio src={audioMode === 'results' ? audioFiles.results : audioMode === 'market' ? audioFiles.market : null} label="전광판 음향" />
     {revealed && <Celebration />}
     <header><div><p className="eyebrow">PUBLIC DISPLAY · ROOM {room}</p><h1>독점게임</h1></div><div className={`market-status ${snapshot.state.phase}`}><i />{snapshot.state.phase === 'setup' ? '시장 개장 대기' : snapshot.state.phase === 'active' ? '시장 거래 중' : '시장 폐장'}</div></header>
 

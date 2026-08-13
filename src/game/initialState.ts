@@ -2,7 +2,7 @@ import type { GameSetup, GameState } from '../types'
 import { createDeck, getDeckRules, shuffle } from './rules'
 
 export const DEFAULT_NAMES = ['사자팀', '호랑이팀', '늑대팀', '여우팀', '독수리팀', '곰팀', '상어팀', '용팀']
-export const DEFAULT_SETUP: GameSetup = { playerNames: DEFAULT_NAMES, durationMinutes: 20 }
+export const DEFAULT_SETUP: GameSetup = { playerNames: DEFAULT_NAMES, durationMinutes: 60 }
 export function createInitialState(setupOrCount: GameSetup | number = DEFAULT_SETUP, random: () => number = Math.random): GameState {
   const fallbackCount = typeof setupOrCount === 'number' ? Math.max(6, Math.min(15, setupOrCount)) : setupOrCount.playerNames.length
   const setup = typeof setupOrCount === 'number'
