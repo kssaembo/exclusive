@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CSSProperties } from 'react'
 import type { BoardSnapshot } from '../types'
+import { Celebration } from '../components/Celebration'
+import { images, resourceIcon } from '../assets'
 
 const channelName = (room: string) => `exclusive-board-${room}`
 const formatTime = (ms: number) => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`
@@ -30,11 +31,11 @@ export function BoardPage() {
   const connectedCount = stations.filter((station) => station.connection === 'connected').length
 
   return <main className={`board-page ${snapshot.state.phase} ${monopolyAlarm ? 'monopoly-alarm' : ''} ${revealed ? 'results-revealed celebration' : ''}`}>
-    {revealed && <div className="fireworks" aria-hidden="true">{Array.from({ length: 8 }, (_, index) => <i key={index} style={{ '--i': index } as CSSProperties} />)}</div>}
+    {revealed && <Celebration />}
     <header><div><p className="eyebrow">PUBLIC DISPLAY · ROOM {room}</p><h1>독점게임</h1></div><div className={`market-status ${snapshot.state.phase}`}><i />{snapshot.state.phase === 'setup' ? '시장 개장 대기' : snapshot.state.phase === 'active' ? '시장 거래 중' : '시장 폐장'}</div></header>
 
-    {monopolyAlarm ? <section className="monopoly-alert"><span>ALERT</span><h2>독점</h2><p>독점이 이루어졌습니다. 거래를 중지해 주세요.</p></section>
-      : revealed && winner ? <section className="winner-display"><p>FINAL RESULT</p><h2>{winner.name}</h2><strong>{winnerResource ? `${winnerResource.label} 독점` : '최종 1위'}</strong><div className="score-formula-guide">점수 = 최고 자원 완성률(반올림) − 폭탄 수 × 15점</div><div className="board-ranking">{snapshot.state.rankings?.map((rank) => <div key={rank.playerId}><b>{rank.rank}위</b><span>{snapshot.state.players.find((player) => player.id === rank.playerId)?.name}</span><small>{Math.round(rank.completionRate * 100)} − ({rank.bombCount}×15)</small><strong>{rank.score}점</strong></div>)}</div></section>
+    {monopolyAlarm ? <section className="monopoly-alert"><img src={images.ui.monopoly} alt="" /><span>ALERT</span><h2>독점</h2><p>독점이 이루어졌습니다. 거래를 중지해 주세요.</p></section>
+      : revealed && winner ? <section className="winner-display decorated-results"><p>FINAL RESULT</p><h2>{winner.name}</h2><strong>{winnerResource ? `${winnerResource.label} 독점` : '최종 1위'}</strong><div className="score-formula-guide">점수 = 최고 자원 완성률(반올림) − 폭탄 수 × 15점</div><div className="board-ranking">{snapshot.state.rankings?.map((rank) => <div key={rank.playerId}>{rank.rank <= 3 ? <b className={`top-rank rank-${rank.rank}`}>{rank.rank}위</b> : <span className="rank-emblem"><img src={images.ui.rank} alt="" /><b>{rank.rank}</b></span>}<span>{snapshot.state.players.find((player) => player.id === rank.playerId)?.name}</span><small><img src={resourceIcon(rank.targetType)} alt="" />{Math.round(rank.completionRate * 100)} − ({rank.bombCount}×15)</small><strong>{rank.score}점</strong></div>)}</div></section>
       : <section className="clock-display"><span>남은 시간</span><strong>{formatTime(remaining)}</strong><div className="clock-line"><i style={{ width: `${Math.max(0, Math.min(100, remaining / (snapshot.state.settings.durationMinutes * 60000) * 100))}%` }} /></div></section>}
 
     <section className="board-stations"><div><span>거래소 이용 현황</span><strong>{connectedCount}/{snapshot.stationCapacity}</strong></div>{Array.from({ length: snapshot.stationCapacity }, (_, index) => { const station = stations.find((item) => item.slot === index + 1); const className = station?.connection === 'connected' ? station.busy ? 'busy' : 'available' : ''; return <div className={`station-beacon ${className}`} key={index}><i /><span>{index + 1}번 거래소</span><b>{station?.connection !== 'connected' ? '연결 대기' : station.busy ? '이용 중' : '이용 가능'}</b></div> })}</section>
