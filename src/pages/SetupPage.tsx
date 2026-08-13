@@ -3,7 +3,6 @@ import { useNavigate, Link } from 'react-router-dom'
 import { DEFAULT_SETUP } from '../game/initialState'
 import { getDeckRules } from '../game/rules'
 import type { GameSetup } from '../types'
-import { audioFiles, BackgroundAudio } from '../audio'
 
 const parseNames = (value: string) => value.split(/\r?\n/).map((name) => name.trim()).filter(Boolean)
 
@@ -27,7 +26,6 @@ export function SetupPage() {
   }
 
   return <main className="setup-page app-shell">
-    <BackgroundAudio src={audioFiles.lobby} label="로비 음악" />
     <header className="simple-header"><Link to="/">← 메인</Link><div><p className="eyebrow">PRE-GAME SETUP</p><h1>게임 사전 설정</h1></div></header>
     <div className="setup-layout">
       <section className="panel">
@@ -45,9 +43,9 @@ export function SetupPage() {
             <li><span>플레이어</span><strong>{valid ? names.length : '6~15'}명 · 1인당 8장</strong></li>
             <li><span>카드 구성</span><strong>{valid ? names.length * 8 : '인원별 자동 조정'}장 · 자원 {valid ? names.length : '6~15'}종</strong></li>
             <li><span>제한시간</span><strong>{Math.max(1, Math.min(90, duration || 1))}분</strong></li>
-            <li><span>점수 기준</span><strong>최고 자원 완성률 − 폭탄 1장당 15점</strong></li>
+            <li><span>점수 기준</span><strong>최고 자원 완성률(100%) - 폭탄 1장당 15점</strong></li>
             <li><span>폭탄 규칙</span><strong>{bombCount}장 · 1장당 -15점</strong></li>
-            <li><span>승리 조건</span><strong>특정 자원 전량 보유 or 폭탄 전량 독점 or 타이머 종료 시 가장 승점이 높은 순</strong></li>
+            <li><span>승리 조건</span><strong>특정 자원 전량 보유 or 폭탄 전량 독점<br />or 타이머 종료 시 가장 승점이 높은 순</strong></li>
           </ul>
           <p>동점은 자원 완성률, 폭탄이 적은 순서로 결정합니다. 카드 종류·장수와 폭탄 수는 등록 인원에 맞춰 자동 구성됩니다.</p>
         </div>

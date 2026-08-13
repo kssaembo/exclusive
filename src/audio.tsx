@@ -16,7 +16,6 @@ export const audioFiles = {
 const effectPool = new Map<string, HTMLAudioElement>()
 
 export function playEffect(src: string, volume = .65) {
-  if (localStorage.getItem('exclusive-audio-enabled') === 'false') return
   const base = effectPool.get(src) ?? new Audio(src)
   effectPool.set(src, base)
   const audio = base.paused ? base : base.cloneNode(true) as HTMLAudioElement
@@ -25,27 +24,45 @@ export function playEffect(src: string, volume = .65) {
   void audio.play().catch(() => undefined)
 }
 
-export function BackgroundAudio({ src, volume = .28, label = '배경음악' }: { src: string | null; volume?: number; label?: string }) {
+export function BackgroundAudio({ src, volume = .28, label = 'BGM' }: { src: string | null; volume?: number; label?: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const [enabled, setEnabled] = useState(() => localStorage.getItem('exclusive-audio-enabled') !== 'false')
   const [playing, setPlaying] = useState(false)
+  const [level, setLevel] = useState(() => {
+    const saved = Number(localStorage.getItem('exclusive-bgm-volume'))
+    return Number.isFinite(saved) && saved >= 0 && saved <= 1 ? saved : volume
+  })
 
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
     audio.pause(); setPlaying(false)
-    if (!src || !enabled) return
-    audio.src = src; audio.loop = true; audio.volume = volume
+    if (!src) return
+    audio.src = src; audio.loop = true; audio.volume = level
     const start = () => void audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false))
     start()
-    window.addEventListener('pointerdown', start, { once: true })
-    return () => { window.removeEventListener('pointerdown', start); audio.pause() }
-  }, [src, enabled, volume])
+    const resumeAfterAutoplayBlock = () => { if (audio.paused) start() }
+    window.addEventListener('pointerdown', resumeAfterAutoplayBlock, { once: true })
+    return () => { window.removeEventListener('pointerdown', resumeAfterAutoplayBlock); audio.pause() }
+  }, [src])
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = level
+    localStorage.setItem('exclusive-bgm-volume', String(level))
+  }, [level])
 
   const toggle = () => {
-    const next = !enabled
-    setEnabled(next); localStorage.setItem('exclusive-audio-enabled', String(next))
+    const audio = audioRef.current
+    if (!audio || !src) return
+    if (audio.paused) void audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false))
+    else { audio.pause(); setPlaying(false) }
   }
 
-  return <><audio ref={audioRef} preload="auto" /><button className={`audio-toggle ${enabled ? 'on' : ''}`} onClick={toggle} aria-label={`${label} ${enabled ? '끄기' : '켜기'}`}>{enabled ? playing ? '🔊' : '♪' : '🔇'} <span>{enabled ? label : '음향 꺼짐'}</span></button></>
+  return <div className={`audio-controls ${playing ? 'on' : ''}`}>
+    <audio ref={audioRef} preload="auto" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />
+    <button className="audio-play-toggle" onClick={toggle} disabled={!src} aria-label={`${label} ${playing ? '일시정지' : '재생'}`}>
+      <span aria-hidden="true">{playing ? 'Ⅱ' : '▶'}</span><b>{playing ? '일시정지' : '재생'}</b>
+    </button>
+    <strong>{label}</strong>
+    <label className="audio-volume"><span aria-hidden="true">🔊</span><span className="sr-only">음량</span><input type="range" min="0" max="1" step="0.05" value={level} onChange={(event) => setLevel(Number(event.target.value))} /></label>
+  </div>
 }
