@@ -6,10 +6,10 @@ import { HostPage } from './pages/HostPage'
 import { StationPage } from './pages/StationPage'
 import { BoardPage } from './pages/BoardPage'
 import { LearningIntroPage } from './pages/LearningIntroPage'
-import { audioFiles, BackgroundAudio } from './audio'
+import { audioFiles, BackgroundAudio, ButtonClickAudio } from './audio'
 
 export default function App() {
   const { pathname } = useLocation()
   const lobbyRoute = ['/', '/intro', '/rules', '/setup'].includes(pathname)
-  return <>{lobbyRoute && <BackgroundAudio src={audioFiles.lobby} label="BGM" />}<Routes><Route path="/" element={<HomePage />} /><Route path="/intro" element={<LearningIntroPage />} /><Route path="/rules" element={<RulesPage />} /><Route path="/setup" element={<SetupPage />} /><Route path="/host" element={<HostPage />} /><Route path="/board" element={<BoardPage />} /><Route path="/station" element={<StationPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></>
+  return <><ButtonClickAudio />{lobbyRoute && <BackgroundAudio src={audioFiles.lobby} label="BGM" />}<Routes><Route path="/" element={<HomePage />} /><Route path="/intro" element={<LearningIntroPage />} /><Route path="/rules" element={<RulesPage />} /><Route path="/setup" element={<SetupPage />} /><Route path="/host" element={<HostPage />} /><Route path="/board" element={<BoardPage />} /><Route path="/station" element={<StationPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></>
 }

@@ -11,6 +11,10 @@ export const audioFiles = {
   playerConfirm: '/assets/audio/sfx-player-confirm.wav',
   resultsReveal: '/assets/audio/sfx-results-reveal.wav',
   tradeSuccess: '/assets/audio/sfx-trade-success.wav',
+  buttonClick: '/assets/audio/sfx-card-select.wav',
+  introNavigate: '/assets/audio/sfx-card-select.wav',
+  introCorrect: '/assets/audio/sfx-player-confirm.wav',
+  introWrong: '/assets/audio/sfx-error.wav',
 } as const
 
 const effectPool = new Map<string, HTMLAudioElement>()
@@ -22,6 +26,20 @@ export function playEffect(src: string, volume = .65) {
   audio.volume = volume
   audio.currentTime = 0
   void audio.play().catch(() => undefined)
+}
+
+export function ButtonClickAudio() {
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (event.button !== 0) return
+      const target = event.target instanceof Element ? event.target.closest<HTMLElement>('button, a[href], [role="button"]') : null
+      if (!target || target.dataset.clickSound === 'off' || target.matches(':disabled, [aria-disabled="true"]')) return
+      playEffect(audioFiles.buttonClick, .28)
+    }
+    document.addEventListener('click', handleClick, true)
+    return () => document.removeEventListener('click', handleClick, true)
+  }, [])
+  return null
 }
 
 export function BackgroundAudio({ src, volume = .28, label = 'BGM' }: { src: string | null; volume?: number; label?: string }) {
@@ -37,12 +55,43 @@ export function BackgroundAudio({ src, volume = .28, label = 'BGM' }: { src: str
     if (!audio) return
     audio.pause(); setPlaying(false)
     if (!src) return
-    audio.src = src; audio.loop = true; audio.volume = level
-    const start = () => void audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false))
-    start()
-    const resumeAfterAutoplayBlock = () => { if (audio.paused) start() }
-    window.addEventListener('pointerdown', resumeAfterAutoplayBlock, { once: true })
-    return () => { window.removeEventListener('pointerdown', resumeAfterAutoplayBlock); audio.pause() }
+    audio.src = src; audio.loop = true; audio.volume = level; audio.load()
+
+    let disposed = false
+    const removeUnlockListeners = () => {
+      window.removeEventListener('pointerdown', resumeAfterAutoplayBlock)
+      window.removeEventListener('keydown', resumeAfterAutoplayBlock)
+      window.removeEventListener('pageshow', resumeAfterAutoplayBlock)
+      document.removeEventListener('visibilitychange', resumeAfterAutoplayBlock)
+    }
+    const start = async () => {
+      if (disposed || !audio.paused) return
+      try {
+        await audio.play()
+        if (!disposed) {
+          setPlaying(true)
+          removeUnlockListeners()
+        }
+      } catch {
+        if (!disposed) setPlaying(false)
+      }
+    }
+    function resumeAfterAutoplayBlock() {
+      if (document.visibilityState !== 'hidden') void start()
+    }
+
+    // Start immediately when the browser allows audible autoplay. If it blocks
+    // playback, the first click, touch, or key press unlocks the same audio object.
+    void start()
+    window.addEventListener('pointerdown', resumeAfterAutoplayBlock)
+    window.addEventListener('keydown', resumeAfterAutoplayBlock)
+    window.addEventListener('pageshow', resumeAfterAutoplayBlock)
+    document.addEventListener('visibilitychange', resumeAfterAutoplayBlock)
+    return () => {
+      disposed = true
+      removeUnlockListeners()
+      audio.pause()
+    }
   }, [src])
 
   useEffect(() => {
@@ -58,7 +107,7 @@ export function BackgroundAudio({ src, volume = .28, label = 'BGM' }: { src: str
   }
 
   return <div className={`audio-controls ${playing ? 'on' : ''}`}>
-    <audio ref={audioRef} preload="auto" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />
+    <audio ref={audioRef} autoPlay playsInline preload="auto" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />
     <button className="audio-play-toggle" onClick={toggle} disabled={!src} aria-label={`${label} ${playing ? '일시정지' : '재생'}`}>
       <span aria-hidden="true">{playing ? 'Ⅱ' : '▶'}</span><b>{playing ? '일시정지' : '재생'}</b>
     </button>

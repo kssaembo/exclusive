@@ -5,13 +5,12 @@ import { LogPanel } from '../components/LogPanel'
 import { StatusDot } from '../components/StatusDot'
 import { TeamGrid } from '../components/TeamGrid'
 import { Celebration } from '../components/Celebration'
-import { LearningIntro } from '../components/LearningIntro'
 import { images, resourceIcon } from '../assets'
 import { GameEngine } from '../game/GameEngine'
 import { createInitialState, DEFAULT_SETUP } from '../game/initialState'
 import { createHostTransport, type IHostGameTransport } from '../network/transportFactory'
 import { createId, createRoomCode } from '../network/ids'
-import { loadBackup, saveBackup } from '../storage/indexedDb'
+import { clearBackup, loadBackup, saveBackup } from '../storage/indexedDb'
 import type { AppLog, BoardSnapshot, GameSetup, GameState, StationStatus, TradeResult, WireMessage } from '../types'
 
 const resultText = (result: TradeResult) => result.ok ? '성공' : `${result.code}: ${result.message}`
@@ -33,7 +32,7 @@ export function HostPage() {
   const [qrUrl, setQrUrl] = useState('')
   const [qrOpen, setQrOpen] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
-  const [introReplayOpen, setIntroReplayOpen] = useState(false)
+  const resettingRef = useRef(false)
   const [copyStatus, setCopyStatus] = useState('')
   const [backupStatus, setBackupStatus] = useState('로컬 백업 준비')
   const [now, setNow] = useState(Date.now())
@@ -60,7 +59,7 @@ export function HostPage() {
       setState(nextState)
       const publicState = engineRef.current.getPublicState()
       networkRef.current?.updateState(publicState); networkRef.current?.broadcast({ type: 'STATE_SYNC', state: publicState })
-      saveBackup(nextState).then(() => setBackupStatus(`백업 ${new Date().toLocaleTimeString('ko-KR', { hour12: false })}`)).catch(() => setBackupStatus('백업 실패'))
+      if (!resettingRef.current) saveBackup(nextState).then(() => setBackupStatus(`백업 ${new Date().toLocaleTimeString('ko-KR', { hour12: false })}`)).catch(() => setBackupStatus('백업 실패'))
     })
     const network = createHostTransport(roomCode, engineRef.current.getPublicState(), {
       onOpen: () => { setHostReady(true); addLog('success', '게임방 생성', `방 코드 ${roomCode}`) },
@@ -109,6 +108,14 @@ export function HostPage() {
   const startGame = () => { engineRef.current.startGame(); addLog('success', '시장 개장', `제한시간 ${state.settings.durationMinutes}분`); openBoard() }
   const endGame = () => { if (window.confirm('거래를 중단하고 현재 순위로 게임을 종료할까요?')) { engineRef.current.endGame('manual'); addLog('warning', '교사 수동 종료', '현재 상태로 결과를 계산했습니다.') } }
   const revealResults = () => { engineRef.current.revealResults(); addLog('success', '결과 공개', '최종 점수와 순위를 공개했습니다.'); openBoard() }
+  const returnHomeAndReset = async () => {
+    resettingRef.current = true
+    if (engineRef.current.getState().phase !== 'ended') engineRef.current.endGame('manual')
+    ;['exclusive-game-setup', 'exclusive-room-code', 'exclusive-learning-intro-progress-v1', 'exclusive-learning-intro-completed'].forEach((key) => sessionStorage.removeItem(key))
+    localStorage.removeItem(`exclusive-board-${roomCode}`)
+    try { await clearBackup() } catch { /* A new game still receives a fresh state through ?fresh=1. */ }
+    navigate('/', { replace: true })
+  }
 
   const copyResultsAndLog = async () => {
     const current = engineRef.current.getState()
@@ -133,7 +140,7 @@ export function HostPage() {
   const winner = state.players.find((player) => player.id === state.winnerPlayerId)
   return <main className={`app-shell host-page ${state.resultsRevealed ? 'celebration' : ''}`}>
     {state.resultsRevealed && <Celebration />}
-    <header className="topbar"><div><p className="eyebrow">TEACHER CONTROL ROOM</p><h1>독점게임 운영 페이지</h1></div><div className="header-status"><StatusDot status={hostReady ? 'connected' : 'connecting'} /><button className="intro-replay-button" onClick={() => setIntroReplayOpen(true)}>학습 인트로 다시 보기</button><button className="rules-modal-button" onClick={() => setRulesOpen(true)}>게임 규칙</button></div></header>
+    <header className="topbar"><div><p className="eyebrow">TEACHER CONTROL ROOM</p><h1>독점게임 운영 페이지</h1></div><div className="header-status"><StatusDot status={hostReady ? 'connected' : 'connecting'} /><button className="home-reset-button" onClick={returnHomeAndReset}>메인화면<br /><small>(게임 초기화)</small></button><button className="rules-modal-button" onClick={() => setRulesOpen(true)}>게임 규칙</button></div></header>
     <section className="host-command panel">
       <div className={`command-room ${state.phase === 'setup' ? 'attention' : ''}`}><span>ROOM CODE</span><div className="room-code-with-qr"><strong>{roomCode}</strong>{qrUrl && <div className="qr-use-group"><small>태블릿 이용 시</small><button className="qr-button framed-qr" onClick={() => setQrOpen(true)} aria-label="거래소 QR 크게 보기"><img className="qr-frame-art" src={images.ui.qrFrame} alt="" /><img className="host-qr" src={qrUrl} alt="거래소 접속 QR" /></button></div>}<button className="copy-station-url" onClick={() => navigator.clipboard.writeText(stationUrl)}>거래소 주소 복사<br /><small>(PC 이용 시)</small></button></div><p className="room-operation-guide">실제 독점 게임 운영을 위한 거래소를 활성화해 주세요. 3개까지 거래소를 열 수 있습니다(2개 추천). 학급 사정에 맞게 태블릿으로 QR코드를 인식한 후 게임 공간과 별도의 공간에 거래소를 설치해 주세요. 예: 앞문·뒷문 앞에 책상 설치</p></div>
       <div className="command-timer"><span className={state.phase === 'ended' ? 'game-ended-label' : ''}>{state.phase === 'setup' ? '게임 준비' : state.phase === 'active' ? '남은 시간' : '게임 종료'}</span><div className="timer-value-row"><strong>{formatTime(remainingMs)}</strong>{state.phase === 'ended' && !state.resultsRevealed && <button className="result-reveal-button" onClick={revealResults}>결과 공개</button>}{state.phase === 'ended' && state.resultsRevealed && <button className="game-exit-button" onClick={() => navigate('/')}>게임종료<br /><small>(메인화면)</small></button>}</div><div className="timer-actions"><button className="open-board-button" onClick={openBoard}>학생 전광판 열기 ↗</button>{state.phase === 'setup' && <button className="primary" onClick={startGame}>게임 시작</button>}{state.phase === 'active' && <button className="danger-text" onClick={endGame}>수동 종료</button>}</div></div>
@@ -141,8 +148,6 @@ export function HostPage() {
     </section>
     {qrOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="거래소 QR 코드" onClick={() => setQrOpen(false)}><div className="qr-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setQrOpen(false)}>닫기 ×</button><div className="large-framed-qr"><img className="qr-frame-art" src={images.ui.qrFrame} alt="" /><img className="qr-code-art" src={qrUrl} alt="거래소 접속 QR 확대" /></div><h2>거래소 접속</h2><p>태블릿 카메라로 QR 코드를 스캔하세요.</p></div></div>}
     {rulesOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="host-rules-title" onClick={() => setRulesOpen(false)}><div className="host-rules-modal" onClick={(event) => event.stopPropagation()}><span className="label">CURRENT GAME RULES</span><h2 id="host-rules-title">현재 게임 규칙</h2><div className="host-rule-grid"><div><b>승리 조건</b><p>특정 자원 전량 또는 폭탄 전량을 모으면 즉시 승리합니다. 제한시간 종료 시 가장 높은 점수가 우승합니다.</p></div><div><b>거래 규칙</b><p>두 플레이어가 비공개로 선택한 같은 장수의 카드만 교환할 수 있습니다.</p></div><div><b>점수 기준</b><p>최고 자원 완성률(%) − 폭탄 수 × 15점으로 계산합니다.</p></div><div><b>동점 기준</b><p>자원 완성률이 높은 순, 폭탄이 적은 순으로 결정합니다.</p></div></div><button className="primary large full" onClick={() => setRulesOpen(false)}>확인하고 운영 페이지로 돌아가기</button></div></div>}
-    {introReplayOpen && <LearningIntro replay className="intro-replay-overlay" onComplete={() => setIntroReplayOpen(false)} />}
-
     {state.phase === 'ended' && <section className={`panel result-banner ${state.resultsRevealed ? 'revealed' : ''}`}><span>{state.resultsRevealed ? 'FINAL RESULT' : 'GAME STOPPED'}</span><h2>{state.resultsRevealed && winner ? `${winner.name} 우승` : state.endReason === 'monopoly' ? '독점이 발생했습니다' : '게임이 종료되었습니다'}</h2><p>{state.resultsRevealed ? '최종 점수와 순위가 공개되었습니다.' : '결과 공개 버튼을 눌러 점수와 순위를 확인하세요.'}</p>{state.resultsRevealed && <button className="copy-results-button" onClick={copyResultsAndLog}>{copyStatus || '결과 로그 복사하기'}</button>}</section>}
 
     {!state.resultsRevealed ? <section className="host-main-grid"><article className="panel"><div className="section-heading"><div><span className="label">PRIVATE PLAYER STATUS</span><h2>실시간 독점 현황</h2></div><span className="muted">교사 화면 전용 · 거래 성공 {state.trades.filter((trade) => trade.status === 'success').length}건</span></div><TeamGrid state={state} revealCards /></article><aside className="panel"><div className="section-heading"><div><span className="label">LIVE OPERATIONS</span><h2>운영 기록</h2></div></div><LogPanel logs={logs} /></aside></section>

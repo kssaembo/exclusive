@@ -139,9 +139,8 @@ export function StationPage() {
   const toggleCard = (side: 'A' | 'B', cardId: string) => {
     const setter = side === 'A' ? setCardsA : setCardsB
     setter((cards) => {
-      if (cards.includes(cardId)) { playEffect(audioFiles.cardSelect, .38); return cards.filter((id) => id !== cardId) }
+      if (cards.includes(cardId)) return cards.filter((id) => id !== cardId)
       if (side === 'B' && cards.length >= cardsA.length) { playEffect(audioFiles.error, .45); setNotice({ kind: 'error', text: `두 번째 플레이어는 정확히 ${cardsA.length}장만 선택할 수 있습니다.` }); return cards }
-      playEffect(audioFiles.cardSelect, .38)
       return [...cards, cardId]
     })
   }

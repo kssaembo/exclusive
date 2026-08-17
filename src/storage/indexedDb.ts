@@ -36,3 +36,14 @@ export async function loadBackup(): Promise<GameState | null> {
   db.close()
   return value
 }
+
+export async function clearBackup(): Promise<void> {
+  const db = await openDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite')
+    transaction.objectStore(STORE_NAME).delete(KEY)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+  })
+  db.close()
+}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { resourceIcon } from '../assets'
+import { audioFiles, playEffect } from '../audio'
 import { gameConnections, introSlides, productionConditions, type IntroSlide } from '../intro/introSlides'
 import type { ResourceType } from '../types'
 
@@ -26,12 +27,12 @@ function MultipleChoiceQuiz({ slide, answer, onAnswer, onReset }: { slide: Intro
         const isSelected = answer === choice.id
         const isCorrect = answered && choice.id === slide.correctAnswer
         const isWrong = answered && isSelected && !isCorrect
-        return <button key={choice.id} disabled={answered} onClick={() => onAnswer(choice.id)} className={`${isCorrect ? 'correct' : ''} ${isWrong ? 'wrong' : ''}`}>
-          <b>{choice.id}</b><span>{choice.text}</span>{isCorrect && <i aria-label="정답">✓</i>}{isWrong && <i aria-label="오답">×</i>}
+        return <button key={choice.id} data-click-sound="off" disabled={answered} onClick={() => onAnswer(choice.id)} className={`${isCorrect ? 'correct' : ''} ${isWrong ? 'wrong' : ''}`}>
+          <b>{choice.id}</b><span>{choice.text}</span>{isCorrect && slide.kind !== 'ox' && <i aria-label="정답">✓</i>}{isWrong && <i aria-label="오답">×</i>}
         </button>
       })}
     </div>
-    {answered && <div className={`intro-feedback ${correct ? 'correct' : 'wrong'}`} role="status"><b>{correct ? '✓ 정답' : '× 다시 확인'}</b><p>{correct ? slide.correctFeedback : slide.incorrectFeedback}</p><button onClick={onReset}>↻ 다시 풀기</button></div>}
+    {answered && <div className={`intro-feedback ${correct ? 'correct' : 'wrong'}`} role="status"><b>{correct ? slide.kind === 'ox' ? '정답' : '✓ 정답' : '× 다시 확인'}</b><p>{correct ? slide.correctFeedback : slide.incorrectFeedback}</p><button onClick={onReset}>↻ 다시 풀기</button></div>}
   </div>
 }
 
@@ -93,6 +94,7 @@ export function LearningIntro({ onComplete, replay = false, className = '' }: Le
   const go = useCallback((next: number) => {
     const target = Math.max(0, Math.min(introSlides.length - 1, next))
     if (target > current && !canGoNext) return
+    if (target !== current) playEffect(audioFiles.introNavigate, .34)
     setDirection(target >= current ? 'next' : 'previous'); setCurrent(target)
   }, [current, canGoNext])
 
@@ -122,9 +124,13 @@ export function LearningIntro({ onComplete, replay = false, className = '' }: Le
     <main key={slide.id} className={`intro-slide slide-${slide.id} move-${direction}`}>
       {slide.kicker && <p className="intro-kicker">{slide.kicker}</p>}
       <h1>{slide.title}</h1>
-      <IntroSlideContent slide={slide} answer={answers[slide.id]} onAnswer={(value) => setAnswers((currentAnswers) => currentAnswers[slide.id] ? currentAnswers : { ...currentAnswers, [slide.id]: value })} onReset={() => setAnswers((currentAnswers) => { const next = { ...currentAnswers }; delete next[slide.id]; return next })} />
+    <IntroSlideContent slide={slide} answer={answers[slide.id]} onAnswer={(value) => {
+      if (answers[slide.id]) return
+      playEffect(value === slide.correctAnswer ? audioFiles.introCorrect : audioFiles.introWrong, value === slide.correctAnswer ? .58 : .48)
+      setAnswers((currentAnswers) => ({ ...currentAnswers, [slide.id]: value }))
+    }} onReset={() => setAnswers((currentAnswers) => { const next = { ...currentAnswers }; delete next[slide.id]; return next })} />
     </main>
-    <footer><button className="intro-nav previous" disabled={current === 0} onClick={() => go(current - 1)}>← 이전</button><div className="intro-progress" aria-label={`전체 8장 중 ${current + 1}장`}>{introSlides.map((item, index) => <button key={item.id} aria-label={`${item.id}번 슬라이드`} className={index === current ? 'active' : index < current ? 'visited' : ''} onClick={() => go(index)} />)}</div>{current === 7 ? <button className="intro-start-game" disabled={starting} onClick={finish}>{replay ? '운영 화면으로 돌아가기' : '독점게임 시작'}</button> : <button className="intro-nav next" disabled={!canGoNext} onClick={() => go(current + 1)}>{current === 0 ? '미션 확인' : '다음'} →</button>}</footer>
+    <footer><button data-click-sound="off" className="intro-nav previous" disabled={current === 0} onClick={() => go(current - 1)}>← 이전</button><div className="intro-progress" aria-label={`전체 8장 중 ${current + 1}장`}>{introSlides.map((item, index) => <button data-click-sound="off" key={item.id} aria-label={`${item.id}번 슬라이드`} className={index === current ? 'active' : index < current ? 'visited' : ''} onClick={() => go(index)} />)}</div>{current === 7 ? <button className="intro-start-game" disabled={starting} onClick={finish}>{replay ? '운영 화면으로 돌아가기' : '독점게임 시작'}</button> : <button data-click-sound="off" className="intro-nav next" disabled={!canGoNext} onClick={() => go(current + 1)}>{current === 0 ? '미션 확인' : '다음'} →</button>}</footer>
     {skipOpen && <div className="modal-backdrop intro-skip-backdrop" role="dialog" aria-modal="true" aria-labelledby="skip-intro-title"><div className="skip-intro-dialog"><span>LEARNING INTRO</span><h2 id="skip-intro-title">학습 인트로를 건너뛰고<br />바로 게임을 시작할까요?</h2><p>수업에서 배운 무역의 원리를 3~4분 동안 간단히 복습할 수 있습니다.</p><div><button onClick={() => setSkipOpen(false)}>계속 보기</button><button className="primary" onClick={finish}>바로 게임 시작</button></div></div></div>}
   </section>
 }

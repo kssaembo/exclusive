@@ -299,3 +299,128 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .confirm-modal > div { grid-template-columns: 1fr; }
   .host-rule-grid { grid-template-columns: 1fr; }.landing-actions { grid-template-columns: 1fr 1fr; gap: 8px; }.action-link { min-height: 76px; padding: 10px 8px; font-size: clamp(1.05rem, 5vw, 1.45rem); }.large-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* v2.8 — one-screen learning intro, reset control, and result-panel alignment */
+.home-reset-button { min-height: 52px; padding: 7px 14px; color: #fff0d6; background: linear-gradient(135deg, #57301c, #2d1b1a); border-color: #d78354; line-height: 1.08; }
+.home-reset-button small { color: #ffc9a8; font-size: .72rem; }
+
+.learning-intro { height: 100dvh; min-height: 100dvh; overflow: hidden; grid-template-rows: 68px minmax(0, 1fr) 82px; }
+.intro-slide { width: min(1420px, 96vw); height: 100%; overflow: hidden; padding: clamp(12px, 2vh, 24px) clamp(16px, 3.5vw, 54px); }
+.intro-slide h1 { margin-bottom: clamp(12px, 2.1vh, 25px); font-size: clamp(2.35rem, 3.9vw, 4.25rem); line-height: 1.16; }
+.intro-kicker { margin-bottom: clamp(5px, 1vh, 10px); line-height: 1.5; }
+.intro-mission > p, .intro-question, .intro-conditions > p, .intro-trade-example > p, .intro-finale p { line-height: 1.58; }
+.resource-orbit { width: min(36vh, 330px); margin-bottom: clamp(6px, 1.2vh, 14px); }
+.resource-orbit img { width: clamp(42px, 6.5vh, 68px); height: clamp(42px, 6.5vh, 68px); }
+.intro-mission > p { font-size: clamp(1.35rem, 2.25vw, 2.1rem); }
+.intro-mission > strong { margin-top: clamp(9px, 1.7vh, 18px); padding-block: 9px; font-size: clamp(1rem, 1.55vw, 1.4rem); line-height: 1.5; }
+.intro-question { margin-bottom: clamp(10px, 1.8vh, 20px); font-size: clamp(1.3rem, 2.05vw, 1.95rem); }
+.intro-choices { gap: clamp(8px, 1.25vh, 13px); }
+.intro-choices button { min-height: clamp(60px, 8.7vh, 78px); padding-block: 10px; font-size: clamp(.95rem, 1.3vw, 1.22rem); line-height: 1.55; }
+.intro-choices.ox button { min-height: clamp(100px, 16vh, 145px); font-size: clamp(3rem, 6vw, 4.4rem); }
+.intro-feedback { margin-top: clamp(9px, 1.5vh, 16px); padding-block: 10px; }
+.intro-feedback p { font-size: clamp(.9rem, 1.25vw, 1.15rem); line-height: 1.58; }
+.intro-conditions > p { margin-bottom: 0; font-size: clamp(1.25rem, 1.95vw, 1.85rem); }
+.intro-conditions > div { gap: clamp(8px, 1vw, 13px); margin: clamp(12px, 2.2vh, 22px) auto; }
+.intro-conditions article { min-height: clamp(142px, 21vh, 190px); gap: 8px; padding: 13px; }
+.intro-conditions article i { width: clamp(46px, 6.5vh, 60px); height: clamp(46px, 6.5vh, 60px); }
+.intro-conditions article span { line-height: 1.55; }
+.intro-conditions > strong { padding-block: 9px; font-size: clamp(1rem, 1.45vw, 1.35rem); line-height: 1.5; }
+.intro-trade-example { gap: clamp(8px, 1.4vh, 14px); }
+.country-card { min-height: clamp(155px, 23vh, 205px); padding-top: 16px; padding-bottom: 16px; }
+.country-card h3 { margin-bottom: 10px; }
+.country-card ul { line-height: 1.62; }
+.intro-trade-example > p { font-size: clamp(1.15rem, 1.7vw, 1.6rem); }
+.trade-terms span { padding-block: 9px; line-height: 1.52; }
+.intro-trade-example > strong { line-height: 1.55; }
+.intro-scenario .scenario-summary { margin-bottom: clamp(8px, 1.4vh, 15px); }
+.scenario-summary > span { min-height: clamp(76px, 11vh, 96px); line-height: 1.52; }
+.scenario-emphasis { margin-top: 8px; line-height: 1.5; }
+.connection-table { gap: clamp(3px, .65vh, 6px); }
+.connection-table > div { min-height: clamp(42px, 6.1vh, 54px); }
+.connection-table b, .connection-table span { padding-block: 7px; line-height: 1.48; }
+.intro-game-link > strong { margin: clamp(8px, 1.4vh, 14px) 0 7px; line-height: 1.52; }
+.intro-caution { padding-block: 7px; line-height: 1.52; }
+.intro-finale { gap: clamp(10px, 2.2vh, 22px); }
+.intro-finale h3 { font-size: clamp(3.3rem, 7vw, 7rem); }
+.intro-finale p { font-size: clamp(1.35rem, 2.55vw, 2.3rem); }
+.intro-finale strong { font-size: clamp(1.55rem, 2.9vw, 2.7rem); line-height: 1.45; }
+
+.board-page.results-revealed { gap: 1.4vh; padding-top: 2vw; padding-bottom: 1.5vw; }
+.board-page.results-revealed .winner-display { align-self: start; width: min(1080px, 94vw); margin: -1.5vh auto 0; padding: 0 5vw 2vh; }
+.winner-display .board-final-label { margin: 0 0 .1vh; }
+.winner-display h2 { margin: 0; font-size: clamp(3.4rem, 10vw, 8rem); line-height: .92; }
+.winner-display > strong { display: block; margin: .6vh 0 2.8vh; font-size: clamp(1.25rem, 2.7vw, 2.2rem); }
+.winner-display > .score-formula-guide { margin-bottom: 2.2vh; }
+.board-ranking { height: 168px; margin-top: 0; }
+.board-ranking > div { min-height: 50px; }
+
+@media (max-height: 800px) {
+  .learning-intro { grid-template-rows: 58px minmax(0, 1fr) 70px; }
+  .learning-intro > header { padding-block: 7px; }
+  .learning-intro > header button { min-height: 42px; }
+  .intro-slide { padding-top: 8px; padding-bottom: 8px; }
+  .intro-slide h1 { margin-bottom: 9px; font-size: clamp(2rem, 3.5vw, 3.35rem); }
+  .intro-kicker { margin-bottom: 3px; font-size: .9rem; }
+  .resource-orbit { width: min(29vh, 235px); margin-bottom: 4px; }
+  .intro-mission > p { font-size: clamp(1.1rem, 1.8vw, 1.55rem); }
+  .intro-mission > strong { margin-top: 6px; padding: 6px 16px; font-size: 1rem; }
+  .intro-question { margin-bottom: 8px; font-size: clamp(1.1rem, 1.65vw, 1.45rem); }
+  .intro-choices button { min-height: 54px; padding: 7px 13px; font-size: clamp(.82rem, 1.08vw, 1rem); }
+  .intro-choices.ox button { min-height: 90px; }
+  .intro-feedback { margin-top: 7px; padding: 7px 12px; }
+  .intro-feedback p { font-size: .85rem; }
+  .intro-feedback button { min-height: 40px; }
+  .intro-conditions > p { font-size: 1.15rem; }
+  .intro-conditions > div { margin: 8px auto; }
+  .intro-conditions article { min-height: 124px; padding: 8px; }
+  .intro-conditions article i { width: 42px; height: 42px; font-size: 1.4rem; }
+  .intro-conditions article span { font-size: .82rem; }
+  .intro-conditions > strong { padding: 6px 18px; font-size: 1rem; }
+  .country-card { min-height: 138px; padding-top: 11px; padding-bottom: 11px; }
+  .country-card img { width: 76px; height: 76px; }
+  .country-card h3 { margin: 3px 0 6px; font-size: 1.25rem; }
+  .country-card ul { font-size: .95rem; }
+  .intro-trade-example > p { font-size: 1.05rem; }
+  .trade-terms span { padding: 6px 10px; font-size: .85rem; }
+  .intro-trade-example > strong { font-size: .95rem; }
+  .scenario-summary > span { min-height: 66px; padding: 7px 12px; font-size: .78rem; }
+  .scenario-summary img { width: 46px; height: 46px; }
+  .scenario-summary b { font-size: 1rem; }
+  .intro-scenario .intro-choices button { min-height: 48px; }
+  .connection-table > div { min-height: 36px; }
+  .connection-table b, .connection-table span { padding: 4px 9px; font-size: .78rem; }
+  .intro-game-link > strong { margin: 6px 0 4px; font-size: 1.05rem; }
+  .intro-caution { padding: 5px 10px; font-size: .76rem; }
+  .learning-intro > footer { padding-block: 6px; }
+  .intro-nav, .intro-start-game { min-height: 48px; }
+  .intro-progress button { min-height: 42px; height: 42px; }
+}
+
+@media (max-width: 720px) {
+  .learning-intro { height: 100dvh; min-height: 100dvh; overflow: hidden; grid-template-rows: 58px minmax(0, 1fr) 68px; }
+  .intro-slide { width: 100vw; height: 100%; overflow: hidden; padding: 7px 9px; }
+  .intro-slide h1 { margin-bottom: 6px; font-size: clamp(1.45rem, 6.2vw, 2.15rem); }
+  .intro-choices { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .intro-choices button { min-height: 48px; grid-template-columns: 28px 1fr 20px; gap: 5px; padding: 5px 7px; font-size: clamp(.64rem, 2.35vw, .84rem); }
+  .intro-choices button > b { width: 25px; height: 25px; }
+  .intro-feedback { grid-template-columns: auto 1fr auto; gap: 6px; padding: 5px 7px; text-align: left; }
+  .intro-feedback > b { font-size: .72rem; }
+  .intro-feedback p { font-size: .65rem; }
+  .intro-feedback button { min-height: 36px; padding: 4px 6px; font-size: .64rem; }
+  .intro-conditions > div { grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .intro-conditions article { min-height: 110px; gap: 4px; padding: 5px 3px; }
+  .intro-conditions article h3 { font-size: .68rem; }
+  .intro-conditions article span { font-size: .58rem; }
+  .intro-trade-example { grid-template-columns: 1fr 62px 1fr; gap: 5px; }
+  .country-card, .trade-arrows { grid-column: auto; }
+  .country-card { min-height: 120px; padding: 7px 48px 7px 7px; }
+  .country-card img { right: 4px; width: 44px; height: 44px; }
+  .country-card h3 { font-size: .78rem; }
+  .country-card ul { padding-left: 14px; font-size: .64rem; }
+  .trade-arrows { grid-template-columns: 1fr; font-size: .65rem; }
+  .trade-terms { grid-template-columns: 1fr 1fr; gap: 5px; }
+  .connection-table b, .connection-table span { font-size: .58rem; }
+  .intro-progress { overflow: hidden; justify-content: center; }
+  .intro-progress button { flex: 0 0 26px; min-width: 26px; width: 26px; }
+  .learning-intro > footer { position: static; }
+}
