@@ -32,6 +32,12 @@ export interface PublicGameState {
 export interface PlayerSnapshot { id: string; name: string; cards: Card[]; version: number; authToken: string }
 export interface PublicStationStatus { slot: number; connection: ConnectionLevel; busy: boolean }
 export interface BoardSnapshot { state: PublicGameState; stations: PublicStationStatus[]; stationCapacity: number; publishedAt: number }
+export type CardViewerMessage =
+  | { type: 'VIEWER_READY' }
+  | { type: 'PLAYER_LIST'; gameId: string; players: Array<{ id: string; name: string }>; phase: GamePhase; publishedAt: number }
+  | { type: 'PLAYER_REQUEST'; playerId: string }
+  | { type: 'PLAYER_CARDS'; gameId: string; playerId: string; playerName: string; cards: Array<Pick<Card, 'type' | 'label'>>; version: number; publishedAt: number }
+  | { type: 'VIEWER_CLEAR' }
 export interface TradeRequest {
   tradeId: string; stationId: string; playerAId: string; playerBId: string
   playerACardIds: string[]; playerBCardIds: string[]; playerAAuthToken: string; playerBAuthToken: string

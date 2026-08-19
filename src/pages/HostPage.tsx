@@ -11,7 +11,7 @@ import { createInitialState, DEFAULT_SETUP } from '../game/initialState'
 import { createHostTransport, type IHostGameTransport } from '../network/transportFactory'
 import { createId, createRoomCode } from '../network/ids'
 import { clearBackup, loadBackup, saveBackup } from '../storage/indexedDb'
-import type { AppLog, BoardSnapshot, GameSetup, GameState, StationStatus, TradeResult, WireMessage } from '../types'
+import type { AppLog, BoardSnapshot, CardViewerMessage, GameSetup, GameState, StationStatus, TradeResult, WireMessage } from '../types'
 
 const resultText = (result: TradeResult) => result.ok ? '성공' : `${result.code}: ${result.message}`
 const isCurrentState = (value: GameState | null): value is GameState => !!value && Array.isArray(value.players) && typeof value.gameId === 'string' && value.settings?.playerCount >= 6 && value.settings?.playerCount <= 15 && Array.isArray(value.settings.deckRules)
@@ -25,6 +25,8 @@ export function HostPage() {
   const engineRef = useRef(new GameEngine(createInitialState(setup)))
   const networkRef = useRef<IHostGameTransport | undefined>(undefined)
   const channelRef = useRef<BroadcastChannel | undefined>(undefined)
+  const cardChannelRef = useRef<BroadcastChannel | undefined>(undefined)
+  const viewedPlayerRef = useRef<string | null>(null)
   const [state, setState] = useState(engineRef.current.getState())
   const [stations, setStations] = useState<StationStatus[]>([])
   const [logs, setLogs] = useState<AppLog[]>([])
@@ -39,6 +41,7 @@ export function HostPage() {
   const [now, setNow] = useState(Date.now())
   const stationUrl = useMemo(() => `${window.location.origin}/station?room=${roomCode}`, [roomCode])
   const boardUrl = useMemo(() => `${window.location.origin}/board?room=${roomCode}`, [roomCode])
+  const cardsUrl = useMemo(() => `${window.location.origin}/cards?room=${roomCode}`, [roomCode])
   const connected = stations.filter((station) => station.connection === 'connected').length
   const remainingMs = state.startedAt ? Math.max(0, state.startedAt + state.settings.durationMinutes * 60000 - (state.phase === 'ended' ? state.endedAt ?? now : now)) : state.settings.durationMinutes * 60000
 
@@ -48,6 +51,22 @@ export function HostPage() {
     sessionStorage.setItem('exclusive-room-code', roomCode)
     if (fresh) { window.history.replaceState({}, '', '/host'); saveBackup(engineRef.current.getState()).catch(() => setBackupStatus('백업 실패')) }
     channelRef.current = new BroadcastChannel(`exclusive-board-${roomCode}`)
+    const cardChannel = new BroadcastChannel(`exclusive-cards-${roomCode}`)
+    cardChannelRef.current = cardChannel
+    const publishCardViewer = (playerId?: string | null) => {
+      const current = engineRef.current.getState()
+      const list: CardViewerMessage = { type: 'PLAYER_LIST', gameId: current.gameId, phase: current.phase, players: current.players.map(({ id, name }) => ({ id, name })), publishedAt: Date.now() }
+      cardChannel.postMessage(list)
+      if (playerId) {
+        const player = current.players.find((item) => item.id === playerId)
+        if (player) cardChannel.postMessage({ type: 'PLAYER_CARDS', gameId: current.gameId, playerId: player.id, playerName: player.name, cards: player.cards.map(({ type, label }) => ({ type, label })), version: player.version, publishedAt: Date.now() } satisfies CardViewerMessage)
+      }
+    }
+    cardChannel.onmessage = (event: MessageEvent<CardViewerMessage>) => {
+      if (event.data.type === 'VIEWER_READY') publishCardViewer(viewedPlayerRef.current)
+      if (event.data.type === 'PLAYER_REQUEST') { viewedPlayerRef.current = event.data.playerId; publishCardViewer(event.data.playerId) }
+      if (event.data.type === 'VIEWER_CLEAR') viewedPlayerRef.current = null
+    }
     QRCode.toDataURL(stationUrl, { width: 320, margin: 1, color: { dark: '#101827', light: '#ffffff' } }).then(setQrUrl)
     if (!fresh) loadBackup().then((backup) => {
       if (isCurrentState(backup)) {
@@ -61,6 +80,7 @@ export function HostPage() {
       const publicState = engineRef.current.getPublicState()
       networkRef.current?.updateState(publicState); networkRef.current?.broadcast({ type: 'STATE_SYNC', state: publicState })
       if (!resettingRef.current) saveBackup(nextState).then(() => setBackupStatus(`백업 ${new Date().toLocaleTimeString('ko-KR', { hour12: false })}`)).catch(() => setBackupStatus('백업 실패'))
+      publishCardViewer(viewedPlayerRef.current)
     })
     const network = createHostTransport(roomCode, engineRef.current.getPublicState(), {
       onOpen: () => { setHostReady(true); addLog('success', '게임방 생성', `방 코드 ${roomCode}`) },
@@ -95,7 +115,7 @@ export function HostPage() {
       } else if (message.type === 'MESSAGE_TEST_REQUEST') network.runMessageTest(stationId, message.testId, message.count)
       else if (message.type === 'MESSAGE_TEST_REPORT') { network.recordReport(stationId, message.report); addLog(message.report.missing || message.report.duplicates ? 'error' : 'success', '연결 테스트 완료', `수신 ${message.report.received}/${message.report.requested}`, stationId) }
     }
-    return () => { unsubscribe(); network.disconnect(); channelRef.current?.close() }
+    return () => { unsubscribe(); network.disconnect(); channelRef.current?.close(); cardChannel.close() }
   }, [roomCode, stationUrl, fresh])
 
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 250); return () => window.clearInterval(timer) }, [])
@@ -106,6 +126,7 @@ export function HostPage() {
   }, [state, stations, now, roomCode])
 
   const openBoard = () => window.open(boardUrl, 'exclusive-game-board', 'popup=yes,width=1280,height=800')
+  const openCards = () => window.open(cardsUrl, 'exclusive-game-cards', 'popup=yes,width=1100,height=760')
   const startGame = () => { engineRef.current.startGame(); addLog('success', '시장 개장', `제한시간 ${state.settings.durationMinutes}분`); openBoard() }
   const endGame = () => { if (window.confirm('거래를 중단하고 현재 순위로 게임을 종료할까요?')) { engineRef.current.endGame('manual'); addLog('warning', '교사 수동 종료', '현재 상태로 결과를 계산했습니다.') } }
   const revealResults = () => { engineRef.current.revealResults(); addLog('success', '결과 공개', '최종 점수와 순위를 공개했습니다.'); openBoard() }
@@ -151,7 +172,7 @@ export function HostPage() {
     <header className="topbar"><div><p className="eyebrow">TEACHER CONTROL ROOM</p><h1>독점게임 운영 페이지</h1></div><div className="header-status"><StatusDot status={hostReady ? 'connected' : 'connecting'} /><button className="home-reset-button" onClick={() => setResetConfirmOpen(true)}>메인화면<br /><small>(게임 초기화)</small></button><button className="rules-modal-button" onClick={() => setRulesOpen(true)}>게임 규칙</button></div></header>
     <section className="host-command panel">
       <div className={`command-room ${state.phase === 'setup' ? 'attention' : ''}`}><span>ROOM CODE</span><div className="room-code-with-qr"><strong>{roomCode}</strong>{qrUrl && <div className="qr-use-group"><small>태블릿 이용 시</small><button className="qr-button framed-qr" onClick={() => setQrOpen(true)} aria-label="거래소 QR 크게 보기"><img className="qr-frame-art" src={images.ui.qrFrame} alt="" /><img className="host-qr" src={qrUrl} alt="거래소 접속 QR" /></button></div>}<button className="copy-station-url" onClick={() => navigator.clipboard.writeText(stationUrl)}>거래소 주소 복사<br /><small>(PC 이용 시)</small></button></div><p className="room-operation-guide">실제 독점 게임 운영을 위한 거래소를 활성화해 주세요. 3개까지 거래소를 열 수 있습니다(2개 추천). 학급 사정에 맞게 태블릿으로 QR코드를 인식한 후 게임 공간과 별도의 공간에 거래소를 설치해 주세요. 예: 앞문·뒷문 앞에 책상 설치</p></div>
-      <div className="command-timer"><span className={state.phase === 'ended' ? 'game-ended-label' : ''}>{state.phase === 'setup' ? '게임 준비' : state.phase === 'active' ? '남은 시간' : '게임 종료'}</span><div className="timer-value-row"><strong>{formatTime(remainingMs)}</strong>{state.phase === 'ended' && !state.resultsRevealed && <button className="result-reveal-button" onClick={revealResults}>결과 공개</button>}{state.phase === 'ended' && state.resultsRevealed && <button className="game-exit-button" onClick={() => navigate('/')}>게임종료<br /><small>(메인화면)</small></button>}</div><div className="timer-actions"><button className="open-board-button" onClick={openBoard}>학생 전광판 열기 ↗</button>{state.phase === 'setup' && <button className="primary" onClick={startGame}>게임 시작</button>}{state.phase === 'active' && <button className="danger-text" onClick={endGame}>수동 종료</button>}</div></div>
+      <div className="command-timer"><span className={state.phase === 'ended' ? 'game-ended-label' : ''}>{state.phase === 'setup' ? '게임 준비' : state.phase === 'active' ? '남은 시간' : '게임 종료'}</span><div className="timer-value-row"><strong>{formatTime(remainingMs)}</strong>{state.phase === 'ended' && !state.resultsRevealed && <button className="result-reveal-button" onClick={revealResults}>결과 공개</button>}{state.phase === 'ended' && state.resultsRevealed && <button className="game-exit-button" onClick={() => navigate('/')}>게임종료<br /><small>(메인화면)</small></button>}</div><div className="timer-actions"><button className="open-board-button" onClick={openBoard}>학생 전광판 열기 ↗</button><button className="open-cards-button" onClick={openCards}>학생 카드 확인 페이지 열기 ↗</button>{state.phase === 'setup' && <button className="primary" onClick={startGame}>게임 시작</button>}{state.phase === 'active' && <button className="danger-text" onClick={endGame}>수동 종료</button>}</div></div>
       <div className="command-stations"><span className="station-connection-label">거래소 연결</span><strong>{connected}<small>/3</small></strong><div className="station-lights">{[1,2,3].map((slot) => { const station = stations.find((item) => item.slot === slot); return <i className={station?.connection === 'connected' ? station.busy ? 'busy' : 'on' : ''} title={`${slot}번 거래소`} key={slot} /> })}</div></div>
     </section>
     {qrOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="거래소 QR 코드" onClick={() => setQrOpen(false)}><div className="qr-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setQrOpen(false)}>닫기 ×</button><div className="large-framed-qr"><img className="qr-frame-art" src={images.ui.qrFrame} alt="" /><img className="qr-code-art" src={qrUrl} alt="거래소 접속 QR 확대" /></div><h2>거래소 접속</h2><p>태블릿 카메라로 QR 코드를 스캔하세요.</p></div></div>}
