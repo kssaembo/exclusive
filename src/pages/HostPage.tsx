@@ -33,16 +33,20 @@ export function HostPage() {
   const [hostReady, setHostReady] = useState(false)
   const [qrUrl, setQrUrl] = useState('')
   const [qrOpen, setQrOpen] = useState(false)
+  const [cardQrOpen, setCardQrOpen] = useState(false)
+  const [cardQrUrl, setCardQrUrl] = useState('')
   const [rulesOpen, setRulesOpen] = useState(false)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const resettingRef = useRef(false)
   const [copyStatus, setCopyStatus] = useState('')
+  const [cardCopyStatus, setCardCopyStatus] = useState('')
   const [backupStatus, setBackupStatus] = useState('로컬 백업 준비')
   const [now, setNow] = useState(Date.now())
   const stationUrl = useMemo(() => `${window.location.origin}/station?room=${roomCode}`, [roomCode])
   const boardUrl = useMemo(() => `${window.location.origin}/board?room=${roomCode}`, [roomCode])
   const cardsUrl = useMemo(() => `${window.location.origin}/cards?room=${roomCode}`, [roomCode])
   const connected = stations.filter((station) => station.connection === 'connected').length
+  const remoteCardViewersRef = useRef(new Map<string, string | null>())
   const remainingMs = state.startedAt ? Math.max(0, state.startedAt + state.settings.durationMinutes * 60000 - (state.phase === 'ended' ? state.endedAt ?? now : now)) : state.settings.durationMinutes * 60000
 
   const addLog = (level: AppLog['level'], title: string, detail?: string, stationId?: string) => setLogs((current) => [{ id: createId('log'), at: Date.now(), level, title, detail, stationId }, ...current].slice(0, 500))
@@ -68,6 +72,7 @@ export function HostPage() {
       if (event.data.type === 'VIEWER_CLEAR') viewedPlayerRef.current = null
     }
     QRCode.toDataURL(stationUrl, { width: 320, margin: 1, color: { dark: '#101827', light: '#ffffff' } }).then(setQrUrl)
+    QRCode.toDataURL(cardsUrl, { width: 420, margin: 1, color: { dark: '#101827', light: '#ffffff' } }).then(setCardQrUrl)
     if (!fresh) loadBackup().then((backup) => {
       if (isCurrentState(backup)) {
         const migrated = { ...backup, resultsRevealed: backup.resultsRevealed ?? false, settings: { ...createInitialState(setup).settings, ...backup.settings } }
@@ -81,6 +86,11 @@ export function HostPage() {
       networkRef.current?.updateState(publicState); networkRef.current?.broadcast({ type: 'STATE_SYNC', state: publicState })
       if (!resettingRef.current) saveBackup(nextState).then(() => setBackupStatus(`백업 ${new Date().toLocaleTimeString('ko-KR', { hour12: false })}`)).catch(() => setBackupStatus('백업 실패'))
       publishCardViewer(viewedPlayerRef.current)
+      remoteCardViewersRef.current.forEach((playerId, viewerId) => {
+        if (!playerId) return
+        const player = nextState.players.find((item) => item.id === playerId)
+        if (player) networkRef.current?.send({ type: 'CARD_VIEWER_CARDS', playerId: player.id, playerName: player.name, cards: player.cards.map(({ type, label }) => ({ type, label })), version: player.version }, viewerId)
+      })
     })
     const network = createHostTransport(roomCode, engineRef.current.getPublicState(), {
       onOpen: () => { setHostReady(true); addLog('success', '게임방 생성', `방 코드 ${roomCode}`) },
@@ -91,7 +101,17 @@ export function HostPage() {
     networkRef.current = network; network.connect()
 
     function handleNetworkMessage(stationId: string, message: WireMessage) {
-      if (message.type === 'STATION_USAGE') network.setStationBusy(stationId, message.busy)
+      if (message.type === 'CARD_VIEWER_HELLO' || message.type === 'CARD_VIEWER_LIST_REQUEST') {
+        if (!remoteCardViewersRef.current.has(stationId)) remoteCardViewersRef.current.set(stationId, null)
+        const current = engineRef.current.getState()
+        network.send({ type: 'CARD_VIEWER_PLAYER_LIST', players: current.players.map(({ id, name }) => ({ id, name })), phase: current.phase }, stationId)
+      } else if (message.type === 'CARD_VIEWER_CARDS_REQUEST') {
+        const player = engineRef.current.getState().players.find((item) => item.id === message.playerId)
+        if (player) {
+          remoteCardViewersRef.current.set(stationId, player.id)
+          network.send({ type: 'CARD_VIEWER_CARDS', playerId: player.id, playerName: player.name, cards: player.cards.map(({ type, label }) => ({ type, label })), version: player.version }, stationId)
+        }
+      } else if (message.type === 'STATION_USAGE') network.setStationBusy(stationId, message.busy)
       else if (message.type === 'PLAYER_SELECT_REQUEST') {
         const player = engineRef.current.selectPlayer(message.playerId, stationId)
         network.send(player ? { type: 'PLAYER_SELECT_RESULT', requestId: message.requestId, ok: true, player } : { type: 'PLAYER_SELECT_RESULT', requestId: message.requestId, ok: false, message: '플레이어 명단 또는 게임 상태를 확인하세요.' }, stationId)
@@ -116,7 +136,7 @@ export function HostPage() {
       else if (message.type === 'MESSAGE_TEST_REPORT') { network.recordReport(stationId, message.report); addLog(message.report.missing || message.report.duplicates ? 'error' : 'success', '연결 테스트 완료', `수신 ${message.report.received}/${message.report.requested}`, stationId) }
     }
     return () => { unsubscribe(); network.disconnect(); channelRef.current?.close(); cardChannel.close() }
-  }, [roomCode, stationUrl, fresh])
+  }, [roomCode, stationUrl, cardsUrl, fresh])
 
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 250); return () => window.clearInterval(timer) }, [])
   useEffect(() => { if (state.phase === 'active' && remainingMs <= 0) { engineRef.current.endGame('timeout'); addLog('warning', '제한시간 종료', '최종 결과 계산을 완료했습니다.') } }, [state.phase, remainingMs])
@@ -126,7 +146,7 @@ export function HostPage() {
   }, [state, stations, now, roomCode])
 
   const openBoard = () => window.open(boardUrl, 'exclusive-game-board', 'popup=yes,width=1280,height=800')
-  const openCards = () => window.open(cardsUrl, 'exclusive-game-cards', 'popup=yes,width=1100,height=760')
+  const copyCardsUrl = async () => { try { await navigator.clipboard.writeText(cardsUrl); setCardCopyStatus('링크 복사 완료') } catch { setCardCopyStatus('복사 실패') }; window.setTimeout(() => setCardCopyStatus(''), 1800) }
   const startGame = () => { engineRef.current.startGame(); addLog('success', '시장 개장', `제한시간 ${state.settings.durationMinutes}분`); openBoard() }
   const endGame = () => { if (window.confirm('거래를 중단하고 현재 순위로 게임을 종료할까요?')) { engineRef.current.endGame('manual'); addLog('warning', '교사 수동 종료', '현재 상태로 결과를 계산했습니다.') } }
   const revealResults = () => { engineRef.current.revealResults(); addLog('success', '결과 공개', '최종 점수와 순위를 공개했습니다.'); openBoard() }
@@ -171,11 +191,12 @@ export function HostPage() {
     {state.resultsRevealed && <Celebration />}
     <header className="topbar"><div><p className="eyebrow">TEACHER CONTROL ROOM</p><h1>독점게임 운영 페이지</h1></div><div className="header-status"><StatusDot status={hostReady ? 'connected' : 'connecting'} /><button className="home-reset-button" onClick={() => setResetConfirmOpen(true)}>메인화면<br /><small>(게임 초기화)</small></button><button className="rules-modal-button" onClick={() => setRulesOpen(true)}>게임 규칙</button></div></header>
     <section className="host-command panel">
-      <div className={`command-room ${state.phase === 'setup' ? 'attention' : ''}`}><span>ROOM CODE</span><div className="room-code-with-qr"><strong>{roomCode}</strong>{qrUrl && <div className="qr-use-group"><small>태블릿 이용 시</small><button className="qr-button framed-qr" onClick={() => setQrOpen(true)} aria-label="거래소 QR 크게 보기"><img className="qr-frame-art" src={images.ui.qrFrame} alt="" /><img className="host-qr" src={qrUrl} alt="거래소 접속 QR" /></button></div>}<button className="copy-station-url" onClick={() => navigator.clipboard.writeText(stationUrl)}>거래소 주소 복사<br /><small>(PC 이용 시)</small></button></div><p className="room-operation-guide">실제 독점 게임 운영을 위한 거래소를 활성화해 주세요. 3개까지 거래소를 열 수 있습니다(2개 추천). 학급 사정에 맞게 태블릿으로 QR코드를 인식한 후 게임 공간과 별도의 공간에 거래소를 설치해 주세요. 예: 앞문·뒷문 앞에 책상 설치</p></div>
-      <div className="command-timer"><span className={state.phase === 'ended' ? 'game-ended-label' : ''}>{state.phase === 'setup' ? '게임 준비' : state.phase === 'active' ? '남은 시간' : '게임 종료'}</span><div className="timer-value-row"><strong>{formatTime(remainingMs)}</strong>{state.phase === 'ended' && !state.resultsRevealed && <button className="result-reveal-button" onClick={revealResults}>결과 공개</button>}{state.phase === 'ended' && state.resultsRevealed && <button className="game-exit-button" onClick={() => navigate('/')}>게임종료<br /><small>(메인화면)</small></button>}</div><div className="timer-actions"><button className="open-board-button" onClick={openBoard}>학생 전광판 열기 ↗</button><button className="open-cards-button" onClick={openCards}>학생 카드 확인 페이지 열기 ↗</button>{state.phase === 'setup' && <button className="primary" onClick={startGame}>게임 시작</button>}{state.phase === 'active' && <button className="danger-text" onClick={endGame}>수동 종료</button>}</div></div>
+      <div className={`command-room ${state.phase === 'setup' ? 'attention' : ''}`}><span>자원 거래소</span><div className="room-code-with-qr"><strong>{roomCode}</strong>{qrUrl && <div className="qr-use-group"><small>태블릿 이용 시</small><button className="qr-button framed-qr" onClick={() => setQrOpen(true)} aria-label="거래소 QR 크게 보기"><img className="qr-frame-art" src={images.ui.qrFrame} alt="" /><img className="host-qr" src={qrUrl} alt="거래소 접속 QR" /></button></div>}<button className="copy-station-url" onClick={() => navigator.clipboard.writeText(stationUrl)}>거래소 주소 복사<br /><small>(PC 이용 시)</small></button></div><p className="room-operation-guide">실제 독점 게임 운영을 위한 거래소를 활성화해 주세요. 3개까지 거래소를 열 수 있습니다(2개 추천). 학급 사정에 맞게 태블릿으로 QR코드를 인식한 후 게임 공간과 별도의 공간에 거래소를 설치해 주세요. 예: 앞문·뒷문 앞에 책상 설치</p></div>
+      <div className="command-timer"><span className={state.phase === 'ended' ? 'game-ended-label' : ''}>{state.phase === 'setup' ? '게임 준비' : state.phase === 'active' ? '남은 시간' : '게임 종료'}</span><div className="timer-value-row"><strong>{formatTime(remainingMs)}</strong>{state.phase === 'ended' && !state.resultsRevealed && <button className="result-reveal-button" onClick={revealResults}>결과 공개</button>}{state.phase === 'ended' && state.resultsRevealed && <button className="game-exit-button" onClick={() => navigate('/')}>게임종료<br /><small>(메인화면)</small></button>}</div><div className="timer-actions"><button className="open-board-button" onClick={openBoard}>학생 전광판 열기 ↗</button><button className="open-cards-button" onClick={() => setCardQrOpen(true)}>학생 카드 확인 페이지 열기</button>{state.phase === 'setup' && <button className="primary" onClick={startGame}>게임 시작</button>}{state.phase === 'active' && <button className="danger-text" onClick={endGame}>수동 종료</button>}</div></div>
       <div className="command-stations"><span className="station-connection-label">거래소 연결</span><strong>{connected}<small>/3</small></strong><div className="station-lights">{[1,2,3].map((slot) => { const station = stations.find((item) => item.slot === slot); return <i className={station?.connection === 'connected' ? station.busy ? 'busy' : 'on' : ''} title={`${slot}번 거래소`} key={slot} /> })}</div></div>
     </section>
     {qrOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="거래소 QR 코드" onClick={() => setQrOpen(false)}><div className="qr-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setQrOpen(false)}>닫기 ×</button><div className="large-framed-qr"><img className="qr-frame-art" src={images.ui.qrFrame} alt="" /><img className="qr-code-art" src={qrUrl} alt="거래소 접속 QR 확대" /></div><h2>거래소 접속</h2><p>태블릿 카메라로 QR 코드를 스캔하세요.</p></div></div>}
+    {cardQrOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="학생 카드 확인 페이지 접속" onClick={() => setCardQrOpen(false)}><div className="card-qr-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setCardQrOpen(false)}>닫기 ×</button><h2>학생 카드 확인 페이지</h2><p>학생이 QR코드를 스캔하거나 링크로 접속합니다.</p><img className="card-viewer-qr" src={cardQrUrl} alt="학생 카드 확인 페이지 QR" /><button className="primary large full" onClick={copyCardsUrl}>{cardCopyStatus || '카드 확인 페이지 링크 복사'}</button></div></div>}
     {resetConfirmOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reset-game-title" onClick={() => setResetConfirmOpen(false)}><div className="reset-confirm-modal" onClick={(event) => event.stopPropagation()}><span className="label">GAME RESET</span><h2 id="reset-game-title">게임을 종료하고<br />메인화면으로 돌아갈까요?</h2><p>현재 카드 배분, 거래 기록, 결과와 연결 상태가 모두 초기화됩니다.</p><div><button onClick={() => setResetConfirmOpen(false)}>계속 운영하기</button><button className="danger-confirm" onClick={returnHomeAndReset}>게임 종료 후 메인화면</button></div></div></div>}
     {rulesOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="host-rules-title" onClick={() => setRulesOpen(false)}><div className="host-rules-modal" onClick={(event) => event.stopPropagation()}><span className="label">CURRENT GAME RULES</span><h2 id="host-rules-title">현재 게임 규칙</h2><div className="host-rule-grid"><div><b>승리 조건</b><p>특정 자원 전량 또는 폭탄 전량을 모으면 즉시 승리합니다. 제한시간 종료 시 가장 높은 점수가 우승합니다.</p></div><div><b>거래 규칙</b><p>두 플레이어가 비공개로 선택한 같은 장수의 카드만 교환할 수 있습니다.</p></div><div><b>점수 기준</b><p>최고 자원 완성률(%) − 폭탄 수 × 15점으로 계산합니다.</p></div><div><b>동점 기준</b><p>자원 완성률이 높은 순, 폭탄이 적은 순으로 결정합니다.</p></div></div><button className="primary large full" onClick={() => setRulesOpen(false)}>확인하고 운영 페이지로 돌아가기</button></div></div>}
     {state.phase === 'ended' && <section className={`panel result-banner ${state.resultsRevealed ? 'revealed' : ''}`}><span>{state.resultsRevealed ? 'FINAL RESULT' : 'GAME STOPPED'}</span><h2>{state.resultsRevealed && winner ? `${winner.name} 우승` : state.endReason === 'monopoly' ? '독점이 발생했습니다' : '게임이 종료되었습니다'}</h2><p>{state.resultsRevealed ? '최종 점수와 순위가 공개되었습니다.' : '결과 공개 버튼을 눌러 점수와 순위를 확인하세요.'}</p>{state.resultsRevealed && <button className="copy-results-button" onClick={copyResultsAndLog}>{copyStatus || '결과 로그 복사하기'}</button>}</section>}

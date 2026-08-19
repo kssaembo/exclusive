@@ -67,5 +67,10 @@ export type WireMessage =
   | { type: 'MESSAGE_TEST_REQUEST'; testId: string; count: 1 | 10 | 100 }
   | { type: 'MESSAGE_TEST_ITEM'; testId: string; sequence: number; total: number; sentAt: number }
   | { type: 'MESSAGE_TEST_REPORT'; report: MessageTestReport }
+  | { type: 'CARD_VIEWER_HELLO'; viewerId: string }
+  | { type: 'CARD_VIEWER_LIST_REQUEST' }
+  | { type: 'CARD_VIEWER_PLAYER_LIST'; players: Array<{ id: string; name: string }>; phase: GamePhase }
+  | { type: 'CARD_VIEWER_CARDS_REQUEST'; playerId: string }
+  | { type: 'CARD_VIEWER_CARDS'; playerId: string; playerName: string; cards: Array<Pick<Card, 'type' | 'label'>>; version: number }
   | { type: 'ERROR'; code: string; message: string }
 export interface StationStatus { stationId: string; name: string; slot: number; connection: ConnectionLevel; busy: boolean; latencyMs: number | null; lastSeenAt: number; reconnects: number; testReport?: MessageTestReport }

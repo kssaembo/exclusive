@@ -19,6 +19,7 @@ interface ConnectionEntry {
 export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]> {
   private peer?: Peer
   private readonly connections = new Map<string, ConnectionEntry>()
+  private readonly viewerConnections = new Map<string, DataConnection>()
   private currentState: PublicGameState
   private readonly messageListeners = new Set<(message: WireMessage, senderId?: string) => void>()
   private readonly statusListeners = new Set<(statuses: StationStatus[]) => void>()
@@ -54,6 +55,8 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
 
   send(message: WireMessage, stationId?: string): boolean {
     if (!stationId) return false
+    const viewer = this.viewerConnections.get(stationId)
+    if (viewer?.open) { viewer.send(message); return true }
     const entry = this.connections.get(stationId)
     if (!entry?.connection.open) return false
     entry.connection.send(message)
@@ -84,6 +87,8 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
       if (entry.pingTimer) window.clearInterval(entry.pingTimer)
       entry.connection.close()
     })
+    this.viewerConnections.forEach((connection) => connection.close())
+    this.viewerConnections.clear()
     this.peer?.destroy()
   }
 
@@ -99,9 +104,22 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
 
   private accept(connection: DataConnection): void {
     let identifiedStationId: string | undefined
+    let identifiedViewerId: string | undefined
 
     connection.on('data', (raw) => {
       const message = raw as WireMessage
+      if (message.type === 'CARD_VIEWER_HELLO') {
+        identifiedViewerId = message.viewerId
+        this.viewerConnections.get(message.viewerId)?.close()
+        this.viewerConnections.set(message.viewerId, connection)
+        this.events.onMessage(message.viewerId, message)
+        return
+      }
+      if (identifiedViewerId) {
+        this.events.onMessage(identifiedViewerId, message)
+        this.messageListeners.forEach((listener) => listener(message, identifiedViewerId))
+        return
+      }
       if (message.type === 'HELLO') {
         identifiedStationId = message.stationId
         let previous = this.connections.get(message.stationId)
@@ -159,6 +177,7 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
     })
 
     const markDisconnected = () => {
+      if (identifiedViewerId && this.viewerConnections.get(identifiedViewerId) === connection) this.viewerConnections.delete(identifiedViewerId)
       if (!identifiedStationId) return
       const entry = this.connections.get(identifiedStationId)
       if (entry?.connection === connection) {
