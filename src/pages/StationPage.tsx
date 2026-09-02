@@ -256,7 +256,7 @@ export function StationPage() {
   const currentSide = stage === 'select-a-cards' ? 'A' : 'B'
 
   return <main className="app-shell station-page">
-    <section className="station-diagnostics"><button onClick={runNetworkTest}>네트워크 진단</button><button onClick={forceReconnect}>재연결</button><span><StatusDot status={connection} />{connection === 'connected' ? '연결됨' : connection === 'connecting' ? '연결 중' : '연결 안 됨'}</span>{'wakeLock' in navigator && <span className={`wake-lock-state ${wakeLockActive ? 'active' : ''}`}>{wakeLockActive ? '화면 꺼짐 방지 ON' : '화면 꺼짐 방지 대기'}</span>}<small>다른 앱이나 화면 잠금 뒤 돌아오면 저장된 방으로 자동 복구됩니다.</small></section>
+    <section className="station-diagnostics"><button onClick={runNetworkTest}>네트워크 진단</button><button onClick={forceReconnect}>재연결</button><small className="station-reconnect-hint">교사 운영 페이지와 연결이 끊어졌을 경우 <b>‘재연결’</b> 버튼을 클릭해 주세요.</small><span><StatusDot status={connection} />{connection === 'connected' ? '연결됨' : connection === 'connecting' ? '연결 중' : '연결 안 됨'}</span>{'wakeLock' in navigator && <span className={`wake-lock-state ${wakeLockActive ? 'active' : ''}`}>{wakeLockActive ? '화면 꺼짐 방지 ON' : '화면 꺼짐 방지 대기'}</span>}<small>다른 앱이나 화면 잠금 뒤 돌아오면 저장된 방으로 자동 복구됩니다.</small></section>
     <header className="topbar station-topbar"><div className="station-identity"><span className="station-badge"><img src={images.ui.station} alt="" /><b>{slot ?? '·'}</b></span><div><p className="eyebrow">ROOM {activeRoom}</p><h1>{slot ? `${slot}번 거래소` : '거래소 연결 중'}</h1></div></div><div className="header-status"><StatusDot status={connection} /><span>{state.phase === 'active' ? '거래 가능' : state.phase === 'ended' ? '시장 폐장' : '개장 대기'}</span></div></header>
     <div className={`notice sticky ${notice.kind}`}>{notice.text}</div>
 
