@@ -1,4 +1,4 @@
-import Peer, { type DataConnection } from 'peerjs'
+import Peer, { PeerErrorType, type DataConnection } from 'peerjs'
 import type { MessageTestReport, PublicGameState, StationStatus, WireMessage } from '../types'
 import type { IGameTransport } from './IGameTransport'
 import { createId, hostPeerId } from './ids'
@@ -19,6 +19,9 @@ interface ConnectionEntry {
 export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]> {
   private peer?: Peer
   private livenessTimer?: number
+  private hostRetryTimer?: number
+  private hostRetryAttempt = 0
+  private stopped = false
   private readonly connections = new Map<string, ConnectionEntry>()
   private readonly viewerConnections = new Map<string, DataConnection>()
   private currentState: PublicGameState
@@ -30,17 +33,14 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
   }
 
   start(): void {
+    this.stopped = false
+    this.hostRetryAttempt = 0
+    if (this.hostRetryTimer) window.clearTimeout(this.hostRetryTimer)
     if (this.livenessTimer) window.clearInterval(this.livenessTimer)
-    this.peer = new Peer(hostPeerId(this.roomCode), { debug: 1 })
-    this.peer.on('open', () => this.events.onOpen())
-    this.peer.on('connection', (connection) => this.accept(connection))
-    this.peer.on('error', (error) => this.events.onError(`PeerJS: ${error.message}`))
-    this.peer.on('disconnected', () => {
-      this.events.onError('시그널링 서버 연결이 끊겼습니다. 자동 복구를 시도합니다.')
-      window.setTimeout(() => {
-        if (this.peer?.disconnected && !this.peer.destroyed) this.peer.reconnect()
-      }, 1000)
-    })
+    const previousPeer = this.peer
+    this.peer = undefined
+    previousPeer?.destroy()
+    this.openHostPeer()
     this.livenessTimer = window.setInterval(() => this.checkStationLiveness(), 3000)
   }
 
@@ -86,6 +86,9 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
   }
 
   stop(): void {
+    this.stopped = true
+    if (this.hostRetryTimer) window.clearTimeout(this.hostRetryTimer)
+    this.hostRetryTimer = undefined
     if (this.livenessTimer) window.clearInterval(this.livenessTimer)
     this.livenessTimer = undefined
     this.connections.forEach((entry) => {
@@ -94,7 +97,9 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
     })
     this.viewerConnections.forEach((connection) => connection.close())
     this.viewerConnections.clear()
-    this.peer?.destroy()
+    const peer = this.peer
+    this.peer = undefined
+    peer?.destroy()
   }
 
   disconnect(): void { this.stop() }
@@ -105,6 +110,57 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
 
   onStatus(handler: (statuses: StationStatus[]) => void): () => void {
     this.statusListeners.add(handler); return () => this.statusListeners.delete(handler)
+  }
+
+  private openHostPeer(): void {
+    if (this.stopped) return
+    const peer = new Peer(hostPeerId(this.roomCode), { debug: 1 })
+    this.peer = peer
+    peer.on('open', () => {
+      if (this.peer !== peer || this.stopped) return
+      this.hostRetryAttempt = 0
+      if (this.hostRetryTimer) window.clearTimeout(this.hostRetryTimer)
+      this.hostRetryTimer = undefined
+      this.events.onOpen()
+    })
+    peer.on('connection', (connection) => {
+      if (this.peer === peer && !this.stopped) this.accept(connection)
+      else connection.close()
+    })
+    peer.on('error', (error) => {
+      if (this.peer !== peer || this.stopped) return
+      this.events.onError(`PeerJS: ${error.message}`)
+      if (error.type === PeerErrorType.UnavailableID) this.scheduleHostRestart()
+    })
+    peer.on('disconnected', () => {
+      if (this.peer !== peer || this.stopped || peer.destroyed) return
+      this.events.onError('시그널링 서버 연결이 끊겼습니다. 자동 복구를 시도합니다.')
+      window.setTimeout(() => {
+        if (this.peer !== peer || this.stopped || peer.destroyed || !peer.disconnected) return
+        try {
+          peer.reconnect()
+        } catch {
+          this.scheduleHostRestart()
+        }
+        window.setTimeout(() => {
+          if (this.peer === peer && !this.stopped && !peer.open) this.scheduleHostRestart()
+        }, 2000)
+      }, 1000)
+    })
+  }
+
+  private scheduleHostRestart(): void {
+    if (this.stopped || this.hostRetryTimer) return
+    const delay = Math.min(1000 * 2 ** this.hostRetryAttempt, 10_000)
+    this.hostRetryAttempt += 1
+    this.hostRetryTimer = window.setTimeout(() => {
+      this.hostRetryTimer = undefined
+      if (this.stopped) return
+      const previousPeer = this.peer
+      this.peer = undefined
+      previousPeer?.destroy()
+      this.openHostPeer()
+    }, delay)
   }
 
   private accept(connection: DataConnection): void {

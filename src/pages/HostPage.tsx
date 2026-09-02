@@ -19,7 +19,7 @@ const formatTime = (ms: number) => `${String(Math.floor(ms / 60000)).padStart(2,
 
 export function HostPage() {
   const navigate = useNavigate()
-  const fresh = new URLSearchParams(location.search).get('fresh') === '1'
+  const [fresh] = useState(() => new URLSearchParams(location.search).get('fresh') === '1')
   const setup = useMemo<GameSetup>(() => { try { return { ...DEFAULT_SETUP, ...JSON.parse(sessionStorage.getItem('exclusive-game-setup') ?? '{}') } } catch { return DEFAULT_SETUP } }, [])
   const [roomCode] = useState(() => sessionStorage.getItem('exclusive-room-code') || createRoomCode())
   const engineRef = useRef(new GameEngine(createInitialState(setup)))
