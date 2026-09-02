@@ -9,13 +9,18 @@ export interface StationNetworkEvents {
   onError: (message: string) => void
 }
 
+const HOST_SILENCE_LIMIT_MS = 12_000
+
 export class StationNetwork implements IGameTransport<WireMessage, ConnectionLevel> {
   private peer?: Peer
   private connection?: DataConnection
   private retryTimer?: number
+  private watchdogTimer?: number
   private stopped = false
+  private rebuilding = false
   private retryAttempt = 0
   private connectionAttemptInProgress = false
+  private lastMessageAt = 0
   private readonly messageListeners = new Set<(message: WireMessage) => void>()
   private readonly statusListeners = new Set<(status: ConnectionLevel) => void>()
 
@@ -28,55 +33,71 @@ export class StationNetwork implements IGameTransport<WireMessage, ConnectionLev
 
   start(): void {
     this.stopped = false
+    this.rebuilding = false
     this.connectionAttemptInProgress = false
-    this.events.onConnection('connecting')
-    this.statusListeners.forEach((listener) => listener('connecting'))
-    this.peer = new Peer({ debug: 1 })
-    this.peer.on('open', () => this.connectToHost())
-    this.peer.on('error', (error) => {
-      this.connectionAttemptInProgress = false
-      this.events.onError(`PeerJS: ${error.message}`)
-      this.scheduleReconnect()
-    })
-    this.peer.on('disconnected', () => this.scheduleReconnect())
+    this.openPeer()
   }
 
   connect(): void { this.start() }
 
   send(message: WireMessage): boolean {
     if (!this.connection?.open) return false
-    this.connection.send(message)
-    return true
+    try {
+      this.connection.send(message)
+      return true
+    } catch {
+      this.forceReconnect()
+      return false
+    }
   }
 
   isConnected(): boolean {
-    return this.connection?.open === true
+    return this.connection?.open === true && Date.now() - this.lastMessageAt < HOST_SILENCE_LIMIT_MS
   }
 
   recoverIfDisconnected(): boolean {
-    if (this.stopped || this.isConnected() || this.connectionAttemptInProgress) return false
-    this.scheduleReconnect(true)
+    if (this.stopped || this.rebuilding || this.connectionAttemptInProgress || !navigator.onLine) return false
+    if (document.visibilityState !== 'visible') return false
+    if (this.connection?.open && Date.now() - this.lastMessageAt < HOST_SILENCE_LIMIT_MS) return false
+    this.forceReconnect()
     return true
   }
 
   forceReconnect(): void {
-    this.connection?.close()
+    if (this.stopped || this.rebuilding) return
+    this.rebuilding = true
     this.connectionAttemptInProgress = false
-    if (this.retryTimer) window.clearTimeout(this.retryTimer)
     this.retryAttempt = 0
-    this.scheduleReconnect(true)
+    this.clearTimers()
+
+    const oldConnection = this.connection
+    const oldPeer = this.peer
+    this.connection = undefined
+    this.peer = undefined
+    oldConnection?.close()
+    oldPeer?.destroy()
+    this.emitConnection('connecting')
+
+    window.setTimeout(() => {
+      if (this.stopped) return
+      this.rebuilding = false
+      this.openPeer()
+    }, 180)
   }
 
-  simulateDrop(): void {
-    this.connection?.close()
-  }
+  simulateDrop(): void { this.connection?.close() }
 
   stop(): void {
     this.stopped = true
+    this.rebuilding = false
     this.connectionAttemptInProgress = false
-    if (this.retryTimer) window.clearTimeout(this.retryTimer)
-    this.connection?.close()
-    this.peer?.destroy()
+    this.clearTimers()
+    const connection = this.connection
+    const peer = this.peer
+    this.connection = undefined
+    this.peer = undefined
+    connection?.close()
+    peer?.destroy()
   }
 
   disconnect(): void { this.stop() }
@@ -89,10 +110,29 @@ export class StationNetwork implements IGameTransport<WireMessage, ConnectionLev
     this.statusListeners.add(handler); return () => this.statusListeners.delete(handler)
   }
 
+  private openPeer(): void {
+    if (this.stopped) return
+    this.emitConnection('connecting')
+    const peer = new Peer({ debug: 1 })
+    this.peer = peer
+    peer.on('open', () => {
+      if (this.peer === peer) this.connectToHost()
+    })
+    peer.on('error', (error) => {
+      if (this.peer !== peer || this.stopped || this.rebuilding) return
+      this.connectionAttemptInProgress = false
+      this.events.onError(`PeerJS: ${error.message}`)
+      this.scheduleReconnect()
+    })
+    peer.on('disconnected', () => {
+      if (this.peer === peer && !this.rebuilding) this.scheduleReconnect()
+    })
+  }
+
   private connectToHost(): void {
-    if (this.stopped || !this.peer?.open || this.isConnected() || this.connectionAttemptInProgress) return
+    if (this.stopped || this.rebuilding || !this.peer?.open || this.connection?.open || this.connectionAttemptInProgress) return
     this.connectionAttemptInProgress = true
-    this.events.onConnection('connecting')
+    this.emitConnection('connecting')
     const connection = this.peer.connect(hostPeerId(this.roomCode), { reliable: true, serialization: 'json' })
     this.connection = connection
     connection.on('open', () => {
@@ -102,13 +142,14 @@ export class StationNetwork implements IGameTransport<WireMessage, ConnectionLev
       }
       this.connectionAttemptInProgress = false
       this.retryAttempt = 0
-      this.events.onConnection('connected')
-      this.statusListeners.forEach((listener) => listener('connected'))
+      this.lastMessageAt = Date.now()
+      this.emitConnection('connected')
+      this.startWatchdog()
       connection.send({ type: 'HELLO', stationId: this.stationId, stationName: this.stationName } satisfies WireMessage)
     })
     connection.on('data', (raw) => this.handleMessage(raw as WireMessage))
     const recoverCurrentConnection = () => {
-      if (this.connection !== connection) return
+      if (this.connection !== connection || this.stopped || this.rebuilding) return
       this.connectionAttemptInProgress = false
       this.scheduleReconnect()
     }
@@ -117,6 +158,7 @@ export class StationNetwork implements IGameTransport<WireMessage, ConnectionLev
   }
 
   private handleMessage(message: WireMessage): void {
+    this.lastMessageAt = Date.now()
     if (message.type === 'PING') {
       this.send({ type: 'PONG', id: message.id, sentAt: message.sentAt })
       return
@@ -125,16 +167,24 @@ export class StationNetwork implements IGameTransport<WireMessage, ConnectionLev
     this.messageListeners.forEach((listener) => listener(message))
   }
 
+  private startWatchdog(): void {
+    if (this.watchdogTimer) window.clearInterval(this.watchdogTimer)
+    this.watchdogTimer = window.setInterval(() => {
+      if (this.stopped || this.rebuilding || document.visibilityState !== 'visible' || !navigator.onLine) return
+      if (!this.connection?.open || Date.now() - this.lastMessageAt >= HOST_SILENCE_LIMIT_MS) this.forceReconnect()
+    }, 3000)
+  }
+
   private scheduleReconnect(immediate = false): void {
-    if (this.stopped || this.retryTimer) return
-    this.events.onConnection('disconnected')
-    this.statusListeners.forEach((listener) => listener('disconnected'))
+    if (this.stopped || this.rebuilding || this.retryTimer) return
+    this.emitConnection('disconnected')
     const delay = immediate ? 0 : Math.min(1000 * 2 ** this.retryAttempt, 10000)
     this.retryAttempt += 1
     this.retryTimer = window.setTimeout(() => {
       this.retryTimer = undefined
+      if (this.stopped) return
       if (this.peer?.destroyed) {
-        this.start()
+        this.forceReconnect()
       } else if (this.peer?.disconnected) {
         this.peer.reconnect()
         window.setTimeout(() => this.connectToHost(), 300)
@@ -142,5 +192,17 @@ export class StationNetwork implements IGameTransport<WireMessage, ConnectionLev
         this.connectToHost()
       }
     }, delay)
+  }
+
+  private clearTimers(): void {
+    if (this.retryTimer) window.clearTimeout(this.retryTimer)
+    if (this.watchdogTimer) window.clearInterval(this.watchdogTimer)
+    this.retryTimer = undefined
+    this.watchdogTimer = undefined
+  }
+
+  private emitConnection(status: ConnectionLevel): void {
+    this.events.onConnection(status)
+    this.statusListeners.forEach((listener) => listener(status))
   }
 }

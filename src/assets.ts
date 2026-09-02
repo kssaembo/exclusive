@@ -4,12 +4,12 @@ const imageRoot = '/assets/images'
 
 export const images = {
   backgrounds: {
-    home: `${imageRoot}/backgrounds/bg-home.png`,
-    setup: `${imageRoot}/backgrounds/bg-setup.png`,
-    host: `${imageRoot}/backgrounds/bg-host.png`,
-    station: `${imageRoot}/backgrounds/bg-station.png`,
-    board: `${imageRoot}/backgrounds/bg-board.png`,
-    results: `${imageRoot}/backgrounds/bg-results.png`,
+    home: `${imageRoot}/backgrounds/bg-home.webp`,
+    setup: `${imageRoot}/backgrounds/bg-setup.webp`,
+    host: `${imageRoot}/backgrounds/bg-host.webp`,
+    station: `${imageRoot}/backgrounds/bg-station.webp`,
+    board: `${imageRoot}/backgrounds/bg-board.webp`,
+    results: `${imageRoot}/backgrounds/bg-results.webp`,
   },
   cards: {
     resource: `${imageRoot}/cards/card-frame-resource.png`,

@@ -18,6 +18,7 @@ interface ConnectionEntry {
 
 export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]> {
   private peer?: Peer
+  private livenessTimer?: number
   private readonly connections = new Map<string, ConnectionEntry>()
   private readonly viewerConnections = new Map<string, DataConnection>()
   private currentState: PublicGameState
@@ -29,6 +30,7 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
   }
 
   start(): void {
+    if (this.livenessTimer) window.clearInterval(this.livenessTimer)
     this.peer = new Peer(hostPeerId(this.roomCode), { debug: 1 })
     this.peer.on('open', () => this.events.onOpen())
     this.peer.on('connection', (connection) => this.accept(connection))
@@ -39,6 +41,7 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
         if (this.peer?.disconnected && !this.peer.destroyed) this.peer.reconnect()
       }, 1000)
     })
+    this.livenessTimer = window.setInterval(() => this.checkStationLiveness(), 3000)
   }
 
   connect(): void { this.start() }
@@ -83,6 +86,8 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
   }
 
   stop(): void {
+    if (this.livenessTimer) window.clearInterval(this.livenessTimer)
+    this.livenessTimer = undefined
     this.connections.forEach((entry) => {
       if (entry.pingTimer) window.clearInterval(entry.pingTimer)
       entry.connection.close()
@@ -180,7 +185,7 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
       if (identifiedViewerId && this.viewerConnections.get(identifiedViewerId) === connection) this.viewerConnections.delete(identifiedViewerId)
       if (!identifiedStationId) return
       const entry = this.connections.get(identifiedStationId)
-      if (entry?.connection === connection) {
+      if (entry?.connection === connection && entry.status.connection !== 'disconnected') {
         entry.status.connection = 'disconnected'
         entry.status.busy = false
         if (entry.pingTimer) window.clearInterval(entry.pingTimer)
@@ -189,6 +194,22 @@ export class HostNetwork implements IGameTransport<WireMessage, StationStatus[]>
     }
     connection.on('close', markDisconnected)
     connection.on('error', markDisconnected)
+  }
+
+  private checkStationLiveness(): void {
+    const now = Date.now()
+    let changed = false
+    this.connections.forEach((entry) => {
+      if (entry.status.connection !== 'connected' || now - entry.status.lastSeenAt < 15_000) return
+      entry.status.connection = 'disconnected'
+      entry.status.busy = false
+      entry.status.latencyMs = null
+      if (entry.pingTimer) window.clearInterval(entry.pingTimer)
+      entry.pingTimer = undefined
+      entry.connection.close()
+      changed = true
+    })
+    if (changed) this.emitStatuses()
   }
 
   private emitStatuses(): void {

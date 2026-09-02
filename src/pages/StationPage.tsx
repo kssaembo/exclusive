@@ -11,6 +11,7 @@ import { audioFiles, playEffect } from '../audio'
 type TradeStage = 'select-a-player' | 'select-a-cards' | 'privacy' | 'select-b-player' | 'select-b-cards' | 'review' | 'processing' | 'done'
 type Notice = { kind: 'success' | 'error' | 'info'; text: string }
 type PendingPlayer = { side: 'A' | 'B'; id: string; name: string } | null
+type WakeLockHandle = { released: boolean; release: () => Promise<void>; addEventListener: (type: 'release', listener: () => void) => void }
 
 export function StationPage() {
   const params = new URLSearchParams(location.search)
@@ -27,38 +28,94 @@ export function StationPage() {
   const [cardsB, setCardsB] = useState<string[]>([])
   const [notice, setNotice] = useState<Notice>({ kind: 'info', text: '방 코드를 입력해 연결하세요.' })
   const [testReport, setTestReport] = useState<MessageTestReport | null>(null)
+  const [wakeLockActive, setWakeLockActive] = useState(false)
   const networkRef = useRef<IStationGameTransport | undefined>(undefined)
   const lastRequestRef = useRef<TradeRequest | null>(null)
   const stageRef = useRef<TradeStage>('select-a-player')
   const playerRequests = useRef(new Map<string, 'A' | 'B'>())
   const testRef = useRef<{ testId: string; total: number; startedAt: number; received: Map<number, number>; timer?: number } | undefined>(undefined)
   const stationIdRef = useRef(localStorage.getItem('exclusive-station-id') || createId('station'))
+  const hiddenAtRef = useRef<number | null>(null)
+  const lastRecoveryAtRef = useRef(0)
+  const autoConnectAttemptedRef = useRef(false)
+  const wakeLockRef = useRef<WakeLockHandle | null>(null)
+
+  const requestWakeLock = async () => {
+    if (document.visibilityState !== 'visible' || wakeLockRef.current) return
+    const wakeLockApi = (navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<WakeLockHandle> } }).wakeLock
+    if (!wakeLockApi) return
+    try {
+      const handle = await wakeLockApi.request('screen')
+      wakeLockRef.current = handle
+      setWakeLockActive(true)
+      handle.addEventListener('release', () => {
+        if (wakeLockRef.current === handle) wakeLockRef.current = null
+        setWakeLockActive(false)
+      })
+    } catch {
+      setWakeLockActive(false)
+    }
+  }
 
   useEffect(() => { localStorage.setItem('exclusive-station-id', stationIdRef.current) }, [])
   useEffect(() => { stageRef.current = stage }, [stage])
   useEffect(() => {
-    const recoverIfDisconnected = () => {
-      if (document.visibilityState !== 'visible' || !navigator.onLine) return
-      networkRef.current?.recoverIfDisconnected()
+    const recoverConnection = (force = false) => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine || !networkRef.current) return
+      const now = Date.now()
+      if (now - lastRecoveryAtRef.current < 2000) return
+      lastRecoveryAtRef.current = now
+      void requestWakeLock()
+      if (force) {
+        setNotice({ kind: 'info', text: '화면 복귀를 확인했습니다. 연결을 안전하게 복구합니다…' })
+        networkRef.current.forceReconnect()
+      } else {
+        networkRef.current.recoverIfDisconnected()
+      }
     }
-    document.addEventListener('visibilitychange', recoverIfDisconnected)
-    window.addEventListener('online', recoverIfDisconnected)
-    window.addEventListener('pageshow', recoverIfDisconnected)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now()
+        return
+      }
+      const backgroundMs = hiddenAtRef.current ? Date.now() - hiddenAtRef.current : 0
+      hiddenAtRef.current = null
+      recoverConnection(backgroundMs >= 10_000)
+    }
+    const recoverAfterNetwork = () => recoverConnection(true)
+    const recoverAfterPageShow = () => recoverConnection(false)
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', recoverAfterPageShow)
+    window.addEventListener('online', recoverAfterNetwork)
+    window.addEventListener('pageshow', recoverAfterPageShow)
     return () => {
-      document.removeEventListener('visibilitychange', recoverIfDisconnected)
-      window.removeEventListener('online', recoverIfDisconnected)
-      window.removeEventListener('pageshow', recoverIfDisconnected)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', recoverAfterPageShow)
+      window.removeEventListener('online', recoverAfterNetwork)
+      window.removeEventListener('pageshow', recoverAfterPageShow)
     }
   }, [])
-  useEffect(() => () => networkRef.current?.disconnect(), [])
+  useEffect(() => () => {
+    networkRef.current?.disconnect()
+    void wakeLockRef.current?.release()
+  }, [])
 
-  const connect = () => {
+  const connect = (automatic = false) => {
     const room = roomInput.trim().toUpperCase()
     if (room.length < 4) { setNotice({ kind: 'error', text: '올바른 방 코드를 입력하세요.' }); return }
     localStorage.setItem('exclusive-last-room', room)
     networkRef.current?.disconnect()
     setActiveRoom(room)
-    const network = createStationTransport(room, stationIdRef.current, '거래소 태블릿', { onConnection: setConnection, onError: (message) => setNotice({ kind: 'error', text: message }), onMessage: handleMessage })
+    setNotice({ kind: 'info', text: automatic ? '저장된 자원 거래소로 자동 연결합니다…' : '게임 운영 페이지에 연결하는 중입니다…' })
+    void requestWakeLock()
+    const network = createStationTransport(room, stationIdRef.current, '거래소 태블릿', {
+      onConnection: (status) => {
+        setConnection(status)
+        if (status === 'disconnected') setNotice({ kind: 'info', text: '연결이 끊어졌습니다. 자동으로 복구하는 중입니다…' })
+      },
+      onError: (message) => setNotice({ kind: 'error', text: message }),
+      onMessage: handleMessage,
+    })
     networkRef.current = network
     network.connect()
 
@@ -104,6 +161,21 @@ export function StationPage() {
       if (test.timer) window.clearTimeout(test.timer)
       test.timer = window.setTimeout(() => finishMessageTest(network), test.received.size === test.total ? 80 : 1200)
     }
+  }
+
+  useEffect(() => {
+    if (autoConnectAttemptedRef.current || activeRoom || roomInput.trim().length < 4) return
+    const timer = window.setTimeout(() => {
+      autoConnectAttemptedRef.current = true
+      connect(true)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  const forceReconnect = () => {
+    setNotice({ kind: 'info', text: '기존 연결을 정리하고 게임 운영 페이지에 다시 연결합니다…' })
+    void requestWakeLock()
+    networkRef.current?.forceReconnect()
   }
 
   const finishMessageTest = (network = networkRef.current) => {
@@ -175,7 +247,7 @@ export function StationPage() {
     return () => window.clearTimeout(timer)
   }, [stage, state.phase])
 
-  if (!activeRoom) return <main className="station-entry"><div className="entry-card"><p className="eyebrow">거래소</p><h1>게임방 연결</h1><p>교사 화면의 방 코드를 입력하세요.</p><input value={roomInput} onChange={(e) => setRoomInput(e.target.value.toUpperCase())} maxLength={8} placeholder="예: A3K9PX" autoFocus /><button onClick={connect}>연결하기</button><div className={`notice ${notice.kind}`}>{notice.text}</div></div></main>
+  if (!activeRoom) return <main className="station-entry"><div className="entry-card"><p className="eyebrow">거래소</p><h1>게임방 연결</h1><p>교사 화면의 방 코드를 입력하세요.</p><input value={roomInput} onChange={(e) => setRoomInput(e.target.value.toUpperCase())} maxLength={8} placeholder="예: A3K9PX" autoFocus /><button onClick={() => connect(false)}>연결하기</button><div className={`notice ${notice.kind}`}>{notice.text}</div></div></main>
 
   const selectingA = stage === 'select-a-player'
   const selectingB = stage === 'select-b-player'
@@ -184,7 +256,7 @@ export function StationPage() {
   const currentSide = stage === 'select-a-cards' ? 'A' : 'B'
 
   return <main className="app-shell station-page">
-    <section className="station-diagnostics"><button onClick={runNetworkTest}>네트워크 진단</button><button onClick={() => networkRef.current?.forceReconnect()}>재연결</button><span><StatusDot status={connection} />{connection === 'connected' ? '연결됨' : connection === 'connecting' ? '연결 중' : '연결 안 됨'}</span></section>
+    <section className="station-diagnostics"><button onClick={runNetworkTest}>네트워크 진단</button><button onClick={forceReconnect}>재연결</button><span><StatusDot status={connection} />{connection === 'connected' ? '연결됨' : connection === 'connecting' ? '연결 중' : '연결 안 됨'}</span>{'wakeLock' in navigator && <span className={`wake-lock-state ${wakeLockActive ? 'active' : ''}`}>{wakeLockActive ? '화면 꺼짐 방지 ON' : '화면 꺼짐 방지 대기'}</span>}<small>다른 앱이나 화면 잠금 뒤 돌아오면 저장된 방으로 자동 복구됩니다.</small></section>
     <header className="topbar station-topbar"><div className="station-identity"><span className="station-badge"><img src={images.ui.station} alt="" /><b>{slot ?? '·'}</b></span><div><p className="eyebrow">ROOM {activeRoom}</p><h1>{slot ? `${slot}번 거래소` : '거래소 연결 중'}</h1></div></div><div className="header-status"><StatusDot status={connection} /><span>{state.phase === 'active' ? '거래 가능' : state.phase === 'ended' ? '시장 폐장' : '개장 대기'}</span></div></header>
     <div className={`notice sticky ${notice.kind}`}>{notice.text}</div>
 
